@@ -278,7 +278,7 @@ impl Configurator {
         ui.columns(2, |cols| {
             cols[0].group(|ui| {
                 ui.heading("Sensibilidad");
-                ui.label(format!("{} CPI", self.settings.profiles[self.settings.active] as u16 * 200));
+                ui.label(format!("{} CPI", self.settings.profiles.get(self.settings.active).copied().unwrap_or(3) as u16 * 200));
                 ui.label(RichText::new("4 perfiles configurables").color(SECONDARY));
                 if ui.button("Editar DPI  →").clicked() { self.page = Page::Dpi; }
             });
@@ -414,15 +414,19 @@ impl Configurator {
             ui.colored_label(Color32::YELLOW, "No hay interfaces compatibles detectadas.");
         } else {
             let chosen = self.devices.get(self.selected).map(|d| d.description()).unwrap_or_default();
+            let mut selection_changed = false;
             egui::ComboBox::from_id_salt("hid_path")
                 .selected_text(chosen)
                 .show_ui(ui, |ui| {
                     for (i, d) in self.devices.iter().enumerate() {
                         if ui.selectable_value(&mut self.selected, i, d.description()).changed() {
-                            self.reset_consent();
+                            selection_changed = true;
                         }
                     }
                 });
+            if selection_changed {
+                self.reset_consent();
+            }
             if let Some(d) = self.devices.get(self.selected) {
                 ui.label(format!("Fabricante: {}", d.manufacturer));
                 ui.label(format!("Interface: {}", d.interface_number));
@@ -478,12 +482,12 @@ impl Configurator {
 
 impl eframe::App for Configurator {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("header").show(ui, |ui| self.header(ui));
-        egui::SidePanel::left("navigation")
+        egui::Panel::top("header").show(ui, |ui| self.header(ui));
+        egui::Panel::left("navigation")
             .resizable(false)
             .exact_width(205.0)
             .show(ui, |ui| self.nav(ui));
-        egui::TopBottomPanel::bottom("apply_dock").show(ui, |ui| self.action_bar(ui));
+        egui::Panel::bottom("apply_dock").show(ui, |ui| self.action_bar(ui));
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
