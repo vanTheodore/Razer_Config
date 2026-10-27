@@ -156,7 +156,7 @@ impl Configurator {
             .map(|(i, bytes)| format!("  {:02}: {}", i + 1, protocol::hex(bytes)))
             .collect::<Vec<_>>().join("\n");
         let report = format!(
-            "CLON//CONTROL {} — último intento REAL de escritura HID\n\
+            "CLON//CONTROL 0.2.4 — último intento REAL de escritura HID\n\
              Hora Unix (UTC): {epoch}\n\
              VID:PID 18F8:1286\n\
              Colección seleccionada: MI 1 / FF01:0001 / Feature 07 (8 bytes)\n\
