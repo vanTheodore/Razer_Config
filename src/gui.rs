@@ -1,7 +1,7 @@
 use cloncontrol_a704f::{device, protocol};
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use protocol::{Action, Light, Settings, Wheel};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
 const ACCENT: Color32 = Color32::from_rgb(100, 224, 196);
 const SECONDARY: Color32 = Color32::from_rgb(165, 181, 191);
@@ -53,6 +53,7 @@ pub struct Configurator {
     armed: bool,
     status: String,
     error: bool,
+    last_hid_attempt: Option<String>,
 }
 
 fn config_path() -> PathBuf {
@@ -61,6 +62,9 @@ fn config_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("ClonControl")
         .join("a704f.json")
+}
+fn trace_path() -> PathBuf {
+    config_path().with_file_name("ultima_prueba_hid.txt")
 }
 
 impl Configurator {
@@ -89,6 +93,7 @@ impl Configurator {
             armed: false,
             status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
             error: false,
+            last_hid_attempt: fs::read_to_string(trace_path()).ok(),
         };
         app.rescan();
         app
@@ -137,6 +142,38 @@ impl Configurator {
         }
     }
 
+    /// Record the last REAL write request only. Never include USB paths, serials,
+    /// usernames, keyboard events or any other identifying HID attributes.
+    fn record_hid_result(&mut self, reports: &[protocol::Report], outcome: &Result<String, String>) -> Result<PathBuf, String> {
+        let epoch = SystemTime::now().duration_since(UNIX_EPOCH)
+            .map(|t| t.as_secs()).unwrap_or_default();
+        let (state, details) = match outcome {
+            Ok(text) => ("ACEPTADO POR HIDAPI (sin verificación física)", text.as_str()),
+            Err(text) => ("ERROR (revisar detalle)", text.as_str()),
+        };
+        let commands = reports.iter()
+            .enumerate()
+            .map(|(i, bytes)| format!("  {:02}: {}", i + 1, protocol::hex(bytes)))
+            .collect::<Vec<_>>().join("\n");
+        let report = format!(
+            "CLON//CONTROL {} — último intento REAL de escritura HID\n\
+             Hora Unix (UTC): {epoch}\n\
+             VID:PID 18F8:1286\n\
+             Colección seleccionada: MI 1 / FF01:0001 / Feature 07 (8 bytes)\n\
+             Comandos previstos (hex):\n{commands}\n\
+             Resultado de Windows: {state}\n\
+             Detalle: {details}\n\
+             Efecto físico: DESCONOCIDO; observar manualmente la luz\n\
+             Nota: este registro no contiene rutas USB ni números de serie.\n"
+        );
+        self.last_hid_attempt = Some(report.clone());
+        let path = trace_path();
+        fs::create_dir_all(path.parent().ok_or("Ruta de informe inválida")?)
+            .map_err(|e| format!("No se pudo crear el directorio de registro: {e}"))?;
+        fs::write(&path, report).map_err(|e| format!("No se pudo guardar el registro HID: {e}"))?;
+        Ok(path)
+    }
+
     fn apply(&mut self) {
         let reports = match self.settings.reports() {
             Ok(p) if !p.is_empty() => p,
@@ -165,10 +202,18 @@ impl Configurator {
             Some(path) => device::apply(&path, &reports),
             None => Err("No hay una interfaz USB del mouse válida para escribir.".into()),
         };
+        let record = self.record_hid_result(&reports, &result);
         self.reset_consent();
+        let report_note = match record {
+            Ok(path) => format!("Registro guardado: {}.", path.display()),
+            Err(e) => format!("ATENCIÓN: {e}."),
+        };
         match result {
-            Ok(msg) => self.message(format!("{msg} Simulación reactivada."), false),
-            Err(e) => self.message(format!("{e} Simulación reactivada."), true),
+            Ok(msg) => self.message(
+                format!("Solicitud HID aceptada por Windows, pero no sabemos si cambió la luz. {msg} {report_note} Simulación reactivada."),
+                false
+            ),
+            Err(e) => self.message(format!("Windows/HIDAPI informó un error: {e}. {report_note} Simulación reactivada."), true),
         }
     }
 
@@ -479,6 +524,20 @@ impl Configurator {
                 }
             }
             Err(e) => { ui.colored_label(Color32::LIGHT_RED, e); }
+        }
+        ui.add_space(15.0);
+        ui.heading("Último resultado real de Windows");
+        ui.label(RichText::new("Este registro aparece únicamente tras una solicitud HID real, nunca al simular.").color(SECONDARY));
+        if let Some(trace) = &self.last_hid_attempt {
+            if ui.button("Copiar registro de la última prueba").clicked() {
+                ui.ctx().copy_text(trace.clone());
+            }
+            ui.label(RichText::new("También se guarda en %LOCALAPPDATA%\\ClonControl\\ultima_prueba_hid.txt").color(SECONDARY));
+            ui.group(|ui| {
+                ui.monospace(trace);
+            });
+        } else {
+            ui.label("Todavía no hay ninguna escritura real registrada en este equipo.");
         }
         ui.add_space(15.0);
         ui.label(RichText::new("La compatibilidad física aún debe comprobarse. No se envían comandos sin consentimiento.").color(SECONDARY));
