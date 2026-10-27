@@ -109,6 +109,7 @@ Los controles modificados se marcan para su próxima aplicación. **Cambiar un v
 - Detecta exclusivamente `18F8:1286` (ignora el dispositivo virtual `25B1:0003` de reWASD).
 - Cuatro perfiles DPI nominales (200–3000 CPI), modos de iluminación, rueda y dos botones laterales.
 - Previsualización de reportes HID y modo simulación por defecto.
+- Pausa configurable entre reportes de 0 a 1000 ms (50 ms por defecto), en Diagnóstico.
 - Exige desactivar la simulación y autorizar expresamente cada sesión de escritura.
 - Presets locales en `%LOCALAPPDATA%\\ClonControl\\a704f.json`; no lee configuración del firmware.
 

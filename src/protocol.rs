@@ -92,6 +92,7 @@ pub struct Settings {
     pub apply_light: bool,
     pub apply_wheel: bool,
     pub apply_buttons: bool,
+    pub report_delay_ms: u16,
 }
 
 impl Default for Settings {
@@ -101,12 +102,14 @@ impl Default for Settings {
             light: Light::Slow, wheel: Wheel::Scroll,
             front: Action::Forward, rear: Action::Back,
             apply_dpi: false, apply_light: false, apply_wheel: false, apply_buttons: false,
+            report_delay_ms: 50,
         }
     }
 }
 
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
+        if self.report_delay_ms > 1000 { return Err("Pausa entre reportes: máximo 1000 ms".into()); }
         if self.active > 3 { return Err("Perfil activo fuera del rango".into()); }
         if self.apply_dpi {
             if self.profiles.iter().any(|&x| !(1..=15).contains(&x)) {
@@ -372,6 +375,14 @@ mod tests {
     #[test]
     fn default_never_writes() {
         assert!(Settings::default().reports().unwrap().is_empty());
+    }
+    #[test]
+    fn report_delay_defaults_and_range() {
+        assert_eq!(Settings::default().report_delay_ms, 50);
+        let mut old_preset: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old_preset.report_delay_ms, 50);
+        old_preset.report_delay_ms = 1001;
+        assert!(old_preset.validate().is_err());
     }
     #[test]
     fn invalid_dpi_fails_closed() {

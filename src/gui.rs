@@ -199,7 +199,7 @@ impl Configurator {
         }
         let target = self.devices.get(self.selected).filter(|d| d.eligible).map(|d| d.path.clone());
         let result = match target {
-            Some(path) => device::apply(&path, &reports),
+            Some(path) => device::apply(&path, &reports, self.settings.report_delay_ms),
             None => Err("No hay una interfaz USB del mouse válida para escribir.".into()),
         };
         let record = self.record_hid_result(&reports, &result);
@@ -513,6 +513,13 @@ impl Configurator {
         ui.label(RichText::new("Un envío aceptado no demuestra que el firmware haya cambiado DPI o luz. Prueba solo apagar la luz antes de tocar DPI.").color(SECONDARY));
         ui.label("Ejecuta a704f-diag.exe para generar %LOCALAPPDATA%\\ClonControl\\diagnostico.txt sin escribir al USB.");
         ui.add_space(17.0);
+        ui.horizontal(|ui| {
+            ui.label("Pausa entre reportes:");
+            if ui.add(egui::DragValue::new(&mut self.settings.report_delay_ms)
+                .range(0..=1000).suffix(" ms")).changed() {
+                self.reset_consent();
+            }
+        });
         ui.heading("Vista previa de comandos");
         match self.settings.reports() {
             Ok(packets) if packets.is_empty() => {

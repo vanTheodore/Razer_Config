@@ -68,7 +68,7 @@ pub fn scan() -> Result<Vec<Candidate>, String> {
 
 /// Always reopen the exact selected HID collection and revalidate its report
 /// descriptor before sending any report. No other collection can be written.
-pub fn apply(path: &str, reports: &[Report]) -> Result<String, String> {
+pub fn apply(path: &str, reports: &[Report], delay_ms: u16) -> Result<String, String> {
     if reports.is_empty() { return Err("No hay configuraciones seleccionadas".into()); }
     if reports.iter().any(|r| r.len() != 8 || r[0] != 0x07) {
         return Err("Solo se permiten reportes HID 07 de ocho bytes".into());
@@ -95,7 +95,9 @@ pub fn apply(path: &str, reports: &[Report]) -> Result<String, String> {
             format!("Reporte {}/{} ({}) fallido: {e}; los anteriores podrían haberse aplicado",
                 idx + 1, reports.len(), hex(report))
         })?;
-        thread::sleep(Duration::from_millis(25));
+        if idx + 1 < reports.len() {
+            thread::sleep(Duration::from_millis(u64::from(delay_ms)));
+        }
     }
     Ok(format!(
         "{} reportes aceptados en MI 1 / FF01:0001 (Feature 07). Comprueba físicamente el resultado.",
