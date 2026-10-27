@@ -1,7 +1,7 @@
-//! Windows HID communications for VID:PID 18F8:1286 only.
-//! No firmware flashing, raw USB transport, or driver installation.
+//! Windows HID transport for vendor configuration collection FF01:0001 on MI 1.
+//! No firmware flashing, driver replacement or access to normal mouse reports.
 
-use crate::protocol::{hex, Report, Transport, PID, VID};
+use crate::protocol::{hex, is_verified_config_collection, Report, PID, VID};
 use hidapi::HidApi;
 use std::{ffi::CString, thread, time::Duration};
 
@@ -13,6 +13,8 @@ pub struct Candidate {
     pub interface_number: i32,
     pub usage_page: u16,
     pub usage: u16,
+    /// True ONLY if the report descriptor declares Feature ID 07 with 56 bits
+    /// in the exact vendor configuration collection FF01:0001, MI 1.
     pub eligible: bool,
 }
 impl Candidate {
@@ -20,16 +22,21 @@ impl Candidate {
         format!(
             "{} [MI {} | Usage {:04X}:{:04X}]{}",
             self.product, self.interface_number, self.usage_page, self.usage,
-            if self.eligible { "" } else { " (no escribible)" }
+            if self.eligible { " — configuración HID 07" } else { " (solo diagnóstico)" }
         )
     }
 }
 
-fn is_mouse_interface(path: &str, interface: i32, page: u16, usage: u16) -> bool {
-    // Never send reports to keyboard HID collections.
-    if page == 1 && usage == 6 { return false; }
-    (page == 1 && usage == 2)
-        || (interface == 0 && path.to_ascii_lowercase().contains("mi_00"))
+fn matches_identity(interface: i32, page: u16, usage: u16) -> bool {
+    interface == 1 && page == 0xFF01 && usage == 1
+}
+
+fn read_descriptor(dev: &hidapi::HidDevice) -> Result<Vec<u8>, String> {
+    let mut buf = vec![0u8; 4096];
+    let len = dev.get_report_descriptor(&mut buf)
+        .map_err(|e| format!("No se pudo leer el descriptor HID: {e}"))?;
+    buf.truncate(len);
+    Ok(buf)
 }
 
 pub fn scan() -> Result<Vec<Candidate>, String> {
@@ -38,8 +45,15 @@ pub fn scan() -> Result<Vec<Candidate>, String> {
         .filter(|d| d.vendor_id() == VID && d.product_id() == PID)
         .map(|d| {
             let path = d.path().to_string_lossy().into_owned();
+            let eligible = if matches_identity(d.interface_number(), d.usage_page(), d.usage()) {
+                api.open_path(d.path()).ok()
+                    .and_then(|dev| read_descriptor(&dev).ok())
+                    .is_some_and(|desc| is_verified_config_collection(
+                        d.interface_number(), d.usage_page(), d.usage(), &desc
+                    ))
+            } else { false };
             Candidate {
-                eligible: is_mouse_interface(&path, d.interface_number(), d.usage_page(), d.usage()),
+                eligible,
                 path,
                 product: d.product_string().unwrap_or("Mouse 18F8:1286").to_owned(),
                 manufacturer: d.manufacturer_string().unwrap_or("No informado").to_owned(),
@@ -52,35 +66,44 @@ pub fn scan() -> Result<Vec<Candidate>, String> {
     Ok(found)
 }
 
-/// Re-enumerate and verify the path before every write session.
-/// HIDAPI send_feature_report returns Result<(), HidError>, NOT a byte count.
-pub fn apply(path: &str, reports: &[Report], transport: Transport) -> Result<String, String> {
+/// Always reopen the exact selected HID collection and revalidate its report
+/// descriptor before sending any report. No other collection can be written.
+pub fn apply(path: &str, reports: &[Report]) -> Result<String, String> {
     if reports.is_empty() { return Err("No hay configuraciones seleccionadas".into()); }
-    // Encode all reports before opening the device; invalid modes never partially write.
-    let frames: Vec<Vec<u8>> = reports.iter().map(|r| transport.encode(r)).collect::<Result<_, _>>()?;
+    if reports.iter().any(|r| r.len() != 8 || r[0] != 0x07) {
+        return Err("Solo se permiten reportes HID 07 de ocho bytes".into());
+    }
     let api = HidApi::new().map_err(|e| format!("Error HIDAPI: {e}"))?;
     let Some(info) = api.device_list().find(|d| {
         d.vendor_id() == VID && d.product_id() == PID && d.path().to_bytes() == path.as_bytes()
     }) else { return Err("Mouse desconectado o ruta cambiada; vuelve a buscar".into()); };
-    if !is_mouse_interface(path, info.interface_number(), info.usage_page(), info.usage()) {
-        return Err("La coleccion seleccionada no es elegible para escribir".into());
+
+    if !matches_identity(info.interface_number(), info.usage_page(), info.usage()) {
+        return Err("Solo puede escribirse a MI 1 / FF01:0001, no al mouse ni al teclado".into());
     }
-    let cpath = CString::new(path).map_err(|_| "Ruta USB invalida".to_owned())?;
-    let dev = api.open_path(&cpath).map_err(|e| format!("Windows no permite abrir esta interfaz: {e}"))?;
-    for (idx, (report, frame)) in reports.iter().zip(frames.iter()).enumerate() {
-        dev.send_feature_report(frame).map_err(|e| {
-            format!("Reporte {}/{} ({}) fallido: {e}; los anteriores podrian haberse aplicado",
+    let cpath = CString::new(path).map_err(|_| "Ruta HID inválida".to_owned())?;
+    let dev = api.open_path(&cpath).map_err(|e| format!("Windows no permite abrir esta colección: {e}"))?;
+    let descriptor = read_descriptor(&dev)?;
+    if !is_verified_config_collection(
+        info.interface_number(), info.usage_page(), info.usage(), &descriptor,
+    ) {
+        return Err("El descriptor ya no declara Feature 07 de 7 bytes; envío bloqueado".into());
+    }
+
+    for (idx, report) in reports.iter().enumerate() {
+        dev.send_feature_report(report).map_err(|e| {
+            format!("Reporte {}/{} ({}) fallido: {e}; los anteriores podrían haberse aplicado",
                 idx + 1, reports.len(), hex(report))
         })?;
         thread::sleep(Duration::from_millis(25));
     }
     Ok(format!(
-        "{} reportes aceptados por HIDAPI. No sabemos si el mouse cambió; compruébalo físicamente.",
+        "{} reportes aceptados en MI 1 / FF01:0001 (Feature 07). Comprueba físicamente el resultado.",
         reports.len()
     ))
 }
 
-/// Read-only USB HID report-descriptor inquiry; no HID SetFeature is issued.
+/// Diagnostic only; opened without HID SetFeature and never used to send.
 pub fn read_report_descriptor(path: &str) -> Result<Vec<u8>, String> {
     let api = HidApi::new().map_err(|e| format!("HIDAPI: {e}"))?;
     if !api.device_list().any(|d|
@@ -90,8 +113,5 @@ pub fn read_report_descriptor(path: &str) -> Result<Vec<u8>, String> {
     }
     let cpath = CString::new(path).map_err(|_| "Ruta USB inválida".to_owned())?;
     let dev = api.open_path(&cpath).map_err(|e| format!("No se pudo abrir para diagnóstico: {e}"))?;
-    let mut buf = vec![0u8; 4096];
-    let len = dev.get_report_descriptor(&mut buf).map_err(|e| format!("No se pudo leer descriptor HID: {e}"))?;
-    buf.truncate(len);
-    Ok(buf)
+    read_descriptor(&dev)
 }
