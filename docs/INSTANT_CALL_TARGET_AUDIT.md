@@ -23,6 +23,10 @@ La muestra contiene múltiples ocurrencias del operando repetido `E8 BA EA 15 00
 
 Los destinos anteriores no son `0x55F6B4` ni `0x55F6BA`. La presencia de imports en el ejecutable no demuestra que estas llamadas ejecuten `HidD_GetFeature` o `HidD_SetFeature`.
 
+## Relocalizaciones
+
+Revisé también el directorio `.reloc` PE: no contiene entradas de reubicación en los cuatro bytes operandos de las cinco instrucciones `CALL rel32` de la tabla. Por tanto, la **reubicación normal de base del cargador PE no explica esos destinos**. Esto no descarta modificaciones especiales del código durante la ejecución ni que se trate de rutas muertas.
+
 ## Consecuencias para la ingeniería inversa
 
 1. **Se revoca la interpretación anterior:** el bloque de `0x41B535` prepara un puntero de buffer, un handle y la longitud `0x20`, pero no se ha demostrado que invoque una lectura HID ni un desbloqueo.
