@@ -1,6 +1,6 @@
 # Instant A704x_5in1 — análisis estático dirigido al protocolo HID
 
-> **Corrección del análisis, 27-oct-2026:** las direcciones de llamada reales del PE extraído no permiten atribuir el bloque de 32 bytes a las funciones HID. Se encontraron llamadas cuyo destino está dentro de otra función, en una instrucción INT3 o en datos. Las secciones 4 y 6 de este documento describen patrones de bytes, **no una negociación demostrada**. Véase [auditoría de destinos de llamada](INSTANT_CALL_TARGET_AUDIT.md).
+> **Corrección definitiva, 27 oct 2026:** las direcciones CALL se habían leído en un PE descomprimido **sin revertir el filtro de Inno Setup `InstructionFilter5309`**. Al restaurarlo, las llamadas apuntan a `HidD_GetFeature` y `HidD_SetFeature`; el digest Authenticode coincide con la firma del ejecutable. [Auditoría corregida](INSTANT_CALL_TARGET_AUDIT.md).
 
 
 **27 de octubre de 2026.** Investigación del instalador aportado por el propietario del mouse. **Ni el instalador ni el ejecutable se han ejecutado.** No se agregan binarios propietarios ni comandos USB nuevos.
@@ -48,7 +48,7 @@ La longitud de los reportes procede de un campo de 16 bits en `0x5EC808`. El pro
 
 Cerca de `0x41B535–0x41B5A7`, antes de las configuraciones, el software prepara un buffer cuyo primer byte es `07`, una operación con longitud aparente de **32 bytes** y examina posteriormente datos del buffer. En una rama condicional de la variante 0 se observan escrituras compatibles con un encabezado `07 1C 00 20` y una operación posterior con longitud **8 bytes**.
 
-**Incertidumbres:** falta demostrar qué funciones invoca realmente este bloque, el sentido de las transferencias, si los bytes proceden de una respuesta y qué condiciones disparan la rama. La operación de 32 bytes tampoco coincide directamente con los 8 bytes declarados por el Feature Report 07 en Windows. No podemos llamar a esto «desbloqueo» o «inicialización necesaria» con certeza, ni sería responsable enviar esos bytes al mouse a ciegas.
+**Resultado tras restaurar el filtro:** las llamadas son HidD_GetFeature y HidD_SetFeature. La variante 0 ejecuta el segundo envío solo si `(buffer[3] & 0xFE) >= 0x08`; falta demostrar qué significa esa respuesta, el estado interno y el propósito del envío. La operación de 32 bytes tampoco coincide directamente con los 8 bytes declarados por el Feature Report 07 en Windows. No podemos llamar a esto «desbloqueo» o «inicialización necesaria» con certeza, ni sería responsable enviar esos bytes al mouse a ciegas.
 
 ## 5. Interpretación del fracaso anterior
 
@@ -56,7 +56,7 @@ La prueba registrada en CLON//CONTROL envió `07 13 7F 17 00 00 00 00` a `MI 1/F
 
 ## 6. Próximos pasos
 
-1. Desentrañar el destino real de las llamadas indirectas del bloque `0x41B535` y el tratamiento de su respuesta; no confiar únicamente en las importaciones PE.
+1. Repetir la lectura de 32 bytes mediante el nuevo diagnóstico opcional `a704f-diag.exe --probe-07` (solo lectura), inspeccionar el resultado y el campo `buffer[3]` sin enviar las escrituras de seguimiento.
 2. Precisar si `HidD_GetFeature` se llama con 32 bytes y bajo qué precondiciones se envía el eventual `07 1C 00 20`.
 3. Mantener CLON//CONTROL sin una secuencia de inicio nueva hasta poder verificarla.
 4. Si se comprueba en un entorno controlado que el software original funciona en esta unidad, utilizar `a704f-trace.exe` para comparar exclusivamente las solicitudes del mouse.
