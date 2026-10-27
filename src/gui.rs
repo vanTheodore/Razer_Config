@@ -485,8 +485,7 @@ impl eframe::App for Configurator {
         egui::Panel::top("header").show(ui, |ui| self.header(ui));
         egui::Panel::left("navigation")
             .resizable(false)
-            .exact_width(205.0)
-            .show(ui, |ui| self.nav(ui));
+            .show(ui, |ui| { ui.set_min_width(195.0); self.nav(ui); });
         egui::Panel::bottom("apply_dock").show(ui, |ui| self.action_bar(ui));
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical()
