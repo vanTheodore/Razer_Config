@@ -41,6 +41,18 @@ cargo build --release --bins
 
 Se necesita Rust 1.88 o superior y toolchain Windows MSVC.
 
+
+## Dependencias / Rust
+
+Versiones directas fijadas para la serie experimental 0.1.4 (octubre de 2026):
+- eframe/egui 0.37.0 (migrado a `eframe::App::ui`).
+- hidapi 2.6.7 (`windows-native`).
+- serde 1.0.229.
+- serde_json 1.0.154.
+- Toolchain mínimo Rust 1.95 (MSVC x64 en Windows).
+
+La actualización se verifica con pruebas y build en GitHub Actions. Las dependencias transitivas se resuelven según el registro de Cargo mientras no se versione `Cargo.lock`; las cuatro directas sí están fijadas exactamente. No implica prueba real de hardware.
+
 ## Fuente y licencia
 
 Basado en los [reportes documentados del A704F](https://github.com/AmberIsFrozen/Instant-A704F-Mouse-Utilities/blob/main/SPECS.md) por AmberIsFrozen (MIT). El VID/PID por sí solo no garantiza compatibilidad. Código MIT en [LICENSE](LICENSE).

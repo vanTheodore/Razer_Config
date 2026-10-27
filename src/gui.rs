@@ -100,8 +100,8 @@ impl Configurator {
 }
 
 impl eframe::App for Configurator {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(RichText::new("CLON//CONTROL").color(AQUA).size(27.0));
