@@ -1,5 +1,8 @@
 # Instant A704x_5in1 — análisis estático dirigido al protocolo HID
 
+> **Corrección del análisis, 27-oct-2026:** las direcciones de llamada reales del PE extraído no permiten atribuir el bloque de 32 bytes a las funciones HID. Se encontraron llamadas cuyo destino está dentro de otra función, en una instrucción INT3 o en datos. Las secciones 4 y 6 de este documento describen patrones de bytes, **no una negociación demostrada**. Véase [auditoría de destinos de llamada](INSTANT_CALL_TARGET_AUDIT.md).
+
+
 **27 de octubre de 2026.** Investigación del instalador aportado por el propietario del mouse. **Ni el instalador ni el ejecutable se han ejecutado.** No se agregan binarios propietarios ni comandos USB nuevos.
 
 ## Artefactos

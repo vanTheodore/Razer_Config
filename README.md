@@ -12,6 +12,10 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## Corrección forense: el supuesto intercambio inicial sigue sin identificarse
+
+Audité los bytes originales del PE, las secciones y los destinos CALL `rel32` del bloque de arranque. Algunas llamadas terminan dentro de otras rutinas, en `INT3` o incluso en `.rdata`. **No es correcto llamar «negociación HID» a esa secuencia ni copiarla al mouse.** Los import thunks HID existen, pero estos destinos no coinciden con ellos. Ver [auditoría reproducible](docs/INSTANT_CALL_TARGET_AUDIT.md).
+
 ## Investigación estática: el ejecutable reconoce nuestro hardware
 
 El análisis sin ejecutar el instalador `A704x_5in1` encontró comparaciones explícitas de VID:PID `18F8:1286`, selección HID `FF01:0001`, construcción de `07 13 7F XX` para iluminación y `07 09` para DPI. Esto **corrobora** varias partes de nuestro encoder, aunque el mouse no respondió físicamente. Hay un intercambio inicial candidato cuya semántica no está verificada y **no se ha implementado**. Ver [hallazgos y direcciones de desensamblado](docs/INSTANT_STATIC_REVERSE_ENGINEERING.md).
