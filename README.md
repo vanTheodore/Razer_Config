@@ -29,7 +29,7 @@ Los controles modificados se marcan para su próxima aplicación. **Cambiar un v
 ## Rust y dependencias actualizadas
 
 - Rust **1.99.1** fijado en `rust-toolchain.toml` (estándar estable publicado en octubre de 2026).
-- MSRV declarada en Cargo.toml: 1.95 (mínimo de egui 0.37).
+- MSRV declarada en Cargo.toml: 1.99 (el objetivo es compilar con Rust 1.99.1).
 - eframe/egui **0.37.0**, hidapi **2.6.7**, serde **1.0.229**, serde_json **1.0.154**.
 - GitHub Actions actualizadas para compilar, ejecutar pruebas y publicar una prerelease experimental después de un build exitoso.
 - El build adjunta `Cargo.lock` para registrar la resolución exacta de dependencias de la versión publicada. En este repositorio aún no se versiona ese lockfile.
@@ -71,7 +71,7 @@ Versiones directas fijadas para la serie experimental 0.2 (octubre de 2026):
 - hidapi 2.6.7 (`windows-native`).
 - serde 1.0.229.
 - serde_json 1.0.154.
-- Toolchain Rust 1.99.1, MSRV 1.95 (MSVC x64 en Windows).
+- Toolchain Rust 1.99.1, MSRV 1.99 (MSVC x64 en Windows).
 
 La actualización se verifica con pruebas y build en GitHub Actions. Las dependencias transitivas se resuelven según el registro de Cargo mientras no se versione `Cargo.lock`; las cuatro directas sí están fijadas exactamente. No implica prueba real de hardware.
 
