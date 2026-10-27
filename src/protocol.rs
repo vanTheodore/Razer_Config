@@ -16,11 +16,11 @@ impl Light {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Slow => "Respiracion lenta (6s)",
-            Self::Medium => "Respiracion (5s)",
-            Self::Fast => "Respiracion (3s)",
-            Self::Faster => "Respiracion (2s)",
-            Self::VeryFast => "Respiracion rapida (1s)",
+            Self::Slow => "Respiración lenta (6s)",
+            Self::Medium => "Respiración (5s)",
+            Self::Fast => "Respiración (3s)",
+            Self::Faster => "Respiración (2s)",
+            Self::VeryFast => "Respiración rapida (1s)",
             Self::Static => "Fija",
             Self::Off => "Apagada",
         }
@@ -56,7 +56,7 @@ impl Action {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Back => "Atras",
+            Self::Back => "Atrás",
             Self::Forward => "Adelante",
             Self::DpiCycle => "Cambiar perfil DPI",
             Self::DpiPlus => "DPI +",
@@ -107,13 +107,13 @@ impl Default for Settings {
 
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
-        if self.active > 3 { return Err("Perfil activo fuera de rango".into()); }
+        if self.active > 3 { return Err("Perfil activo fuera del rango".into()); }
         if self.apply_dpi {
             if self.profiles.iter().any(|&x| !(1..=15).contains(&x)) {
                 return Err("DPI: solo 200..3000 CPI en pasos de 200".into());
             }
             if !self.enabled.iter().any(|&on| on) || !self.enabled[self.active] {
-                return Err("Activa al menos un perfil y el perfil seleccionado".into());
+                return Err("Activa al menos un perfil, incluido el seleccionado".into());
             }
         }
         Ok(())
@@ -146,16 +146,76 @@ pub fn rgb(light: Light) -> Report { packet(0x13, 0x7F, light.code(), 0) }
 pub fn wheel(mode: Wheel) -> Report { packet(0x11, mode.code(), 0, 0) }
 pub fn bind(physical: u8, action: Action) -> Result<Report, String> {
     if !matches!(physical, 0x04 | 0x05) {
-        return Err("Solo se permiten remapear botones laterales".into());
+        return Err("Solo se permite reasignar botones laterales".into());
     }
     Ok(packet(0x10, physical, action.code(), 0))
 }
 pub fn dpi(active: u8, slot: u8, unit: u8, mask: u8) -> Result<Report, String> {
     if active > 3 || slot > 3 || !(1..=15).contains(&unit) || mask == 0 || mask > 0x0F || mask & (1 << active) == 0 {
-        return Err("Parametros DPI invalidos".into());
+        return Err("Parámetros DPI inválidos".into());
     }
     Ok(packet(0x09, active, (unit << 4) | (0x08 + slot), mask))
 }
+/// Different, unverified HIDAPI payloads seen in the Linux reference and the USB capture.
+/// The 16-byte form has NOT been confirmed to work via HidD_SetFeature on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transport {
+    Standard8,
+    LinuxReference16,
+}
+
+impl Transport {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Standard8 => "Reporte de 8 bytes (inicial, sin verificar)",
+            Self::LinuxReference16 => "Trama de referencia de 16 bytes (experimental, solo luz)",
+        }
+    }
+    pub fn encode(self, report: &Report) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Standard8 => Ok(report.to_vec()),
+            Self::LinuxReference16 => {
+                if report[1] != 0x13 {
+                    return Err("La trama experimental de 16 bytes solo está habilitada para iluminación".into());
+                }
+                let mut frame = vec![0x21, 0x09, 0x07, 0x03, 0x01, 0x00, 0x08, 0x00];
+                frame.extend_from_slice(report);
+                Ok(frame)
+            }
+        }
+    }
+}
+
+/// Parse the Report ID of HID Feature items from a descriptor without sending anything.
+pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
+    let mut current_id = 0u8;
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < descriptor.len() {
+        let prefix = descriptor[i];
+        i += 1;
+        if prefix == 0xFE {
+            if i + 2 > descriptor.len() { break; }
+            let size = descriptor[i] as usize;
+            i += 2;
+            if i + size > descriptor.len() { break; }
+            i += size;
+            continue;
+        }
+        let size = match prefix & 3 { 0 => 0, 1 => 1, 2 => 2, _ => 4 };
+        if i + size > descriptor.len() { break; }
+        let kind = (prefix >> 2) & 3;
+        let tag = prefix >> 4;
+        if kind == 1 && tag == 8 && size == 1 { current_id = descriptor[i]; }
+        if kind == 0 && tag == 11 && !result.contains(&current_id) {
+            result.push(current_id);
+        }
+        i += size;
+    }
+    result.sort_unstable();
+    result
+}
+
 pub fn hex(report: &Report) -> String {
     report.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ")
 }
@@ -163,6 +223,23 @@ pub fn hex(report: &Report) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn framing_matches_documented_linux_reference() {
+        let rgb = rgb(Light::Off);
+        assert_eq!(Transport::Standard8.encode(&rgb).unwrap(), vec![7, 0x13, 0x7f, 0x17, 0, 0, 0, 0]);
+        assert_eq!(Transport::LinuxReference16.encode(&rgb).unwrap(),
+            vec![0x21, 0x09, 0x07, 0x03, 0x01, 0, 0x08, 0, 0x07, 0x13, 0x7f, 0x17, 0, 0, 0, 0]);
+        assert!(Transport::LinuxReference16.encode(&wheel(Wheel::Volume)).is_err());
+        assert!(Transport::LinuxReference16.encode(&dpi(0, 0, 4, 15).unwrap()).is_err());
+    }
+    #[test]
+    fn descriptor_feature_ids() {
+        let desc = [0x05, 0x01, 0x85, 0x07, 0x09, 0x02, 0xB1, 0x02,
+                    0x85, 0x21, 0xB1, 0x02, 0x85, 0x07, 0xB1, 0x02];
+        assert_eq!(feature_report_ids(&desc), vec![7, 0x21]);
+        assert_eq!(feature_report_ids(&[0x05, 0x01, 0x09, 0x02]), Vec::<u8>::new());
+        assert_eq!(feature_report_ids(&[0x85]), Vec::<u8>::new());
+    }
     #[test]
     fn rgb_off_vector() {
         assert_eq!(rgb(Light::Off), [7, 0x13, 0x7F, 0x17, 0, 0, 0, 0]);

@@ -1,7 +1,7 @@
 //! Windows HID communications for VID:PID 18F8:1286 only.
 //! No firmware flashing, raw USB transport, or driver installation.
 
-use crate::protocol::{hex, Report, PID, VID};
+use crate::protocol::{hex, Report, Transport, PID, VID};
 use hidapi::HidApi;
 use std::{ffi::CString, thread, time::Duration};
 
@@ -54,8 +54,10 @@ pub fn scan() -> Result<Vec<Candidate>, String> {
 
 /// Re-enumerate and verify the path before every write session.
 /// HIDAPI send_feature_report returns Result<(), HidError>, NOT a byte count.
-pub fn apply(path: &str, reports: &[Report]) -> Result<String, String> {
+pub fn apply(path: &str, reports: &[Report], transport: Transport) -> Result<String, String> {
     if reports.is_empty() { return Err("No hay configuraciones seleccionadas".into()); }
+    // Encode all reports before opening the device; invalid modes never partially write.
+    let frames: Vec<Vec<u8>> = reports.iter().map(|r| transport.encode(r)).collect::<Result<_, _>>()?;
     let api = HidApi::new().map_err(|e| format!("Error HIDAPI: {e}"))?;
     let Some(info) = api.device_list().find(|d| {
         d.vendor_id() == VID && d.product_id() == PID && d.path().to_bytes() == path.as_bytes()
@@ -65,15 +67,31 @@ pub fn apply(path: &str, reports: &[Report]) -> Result<String, String> {
     }
     let cpath = CString::new(path).map_err(|_| "Ruta USB invalida".to_owned())?;
     let dev = api.open_path(&cpath).map_err(|e| format!("Windows no permite abrir esta interfaz: {e}"))?;
-    for (idx, report) in reports.iter().enumerate() {
-        dev.send_feature_report(report).map_err(|e| {
+    for (idx, (report, frame)) in reports.iter().zip(frames.iter()).enumerate() {
+        dev.send_feature_report(frame).map_err(|e| {
             format!("Reporte {}/{} ({}) fallido: {e}; los anteriores podrian haberse aplicado",
                 idx + 1, reports.len(), hex(report))
         })?;
         thread::sleep(Duration::from_millis(25));
     }
     Ok(format!(
-        "{} reportes enviados por HIDAPI. Esto NO confirma su efecto en el firmware.",
+        "{} reportes aceptados por HIDAPI. No sabemos si el mouse cambió; compruébalo físicamente.",
         reports.len()
     ))
+}
+
+/// Read-only USB HID report-descriptor inquiry; no HID SetFeature is issued.
+pub fn read_report_descriptor(path: &str) -> Result<Vec<u8>, String> {
+    let api = HidApi::new().map_err(|e| format!("HIDAPI: {e}"))?;
+    if !api.device_list().any(|d|
+        d.vendor_id() == VID && d.product_id() == PID && d.path().to_bytes() == path.as_bytes()
+    ) {
+        return Err("El dispositivo seleccionado ya no está disponible".into());
+    }
+    let cpath = CString::new(path).map_err(|_| "Ruta USB inválida".to_owned())?;
+    let dev = api.open_path(&cpath).map_err(|e| format!("No se pudo abrir para diagnóstico: {e}"))?;
+    let mut buf = vec![0u8; 4096];
+    let len = dev.get_report_descriptor(&mut buf).map_err(|e| format!("No se pudo leer descriptor HID: {e}"))?;
+    buf.truncate(len);
+    Ok(buf)
 }

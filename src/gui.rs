@@ -26,10 +26,10 @@ impl Page {
         match self {
             Self::Device => "Inicio",
             Self::Dpi => "Sensibilidad",
-            Self::Lights => "Iluminacion",
+            Self::Lights => "Iluminación",
             Self::Buttons => "Botones",
             Self::Wheel => "Rueda",
-            Self::Diagnostics => "Diagnostico",
+            Self::Diagnostics => "Diagnóstico",
         }
     }
     fn short(self) -> &'static str {
@@ -50,6 +50,7 @@ pub struct Configurator {
     selected: usize,
     page: Page,
     dry_run: bool,
+    transport: protocol::Transport,
     armed: bool,
     status: String,
     error: bool,
@@ -75,7 +76,7 @@ impl Configurator {
         let (settings, warning) = match fs::read_to_string(config_path()) {
             Ok(json) => match serde_json::from_str::<Settings>(&json) {
                 Ok(s) => (s, None),
-                Err(e) => (Settings::default(), Some(format!("Preset local invalido: {e}"))),
+                Err(e) => (Settings::default(), Some(format!("Preset local inválido: {e}"))),
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Settings::default(), None),
             Err(e) => (Settings::default(), Some(format!("No se puede leer el preset: {e}"))),
@@ -86,8 +87,9 @@ impl Configurator {
             selected: 0,
             page: Page::Device,
             dry_run: true,
+            transport: protocol::Transport::Standard8,
             armed: false,
-            status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en USB.".into()),
+            status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
             error: false,
         };
         app.rescan();
@@ -111,7 +113,7 @@ impl Configurator {
                 self.devices = found;
                 self.selected = self.devices.iter().position(|d| d.eligible).unwrap_or(0);
                 self.message(
-                    format!("{} interfaz(es) HID encontradas. Simulacion activa.", self.devices.len()),
+                    format!("{} interfaz(es) HID encontradas. Simulación activa.", self.devices.len()),
                     false,
                 );
             }
@@ -125,7 +127,7 @@ impl Configurator {
     fn save(&mut self) {
         let path = config_path();
         let result = (|| -> Result<(), String> {
-            fs::create_dir_all(path.parent().ok_or("Ruta invalida")?)
+            fs::create_dir_all(path.parent().ok_or("Ruta inválida")?)
                 .map_err(|e| e.to_string())?;
             let json = serde_json::to_vec_pretty(&self.settings).map_err(|e| e.to_string())?;
             fs::write(&path, json).map_err(|e| e.to_string())?;
@@ -141,7 +143,7 @@ impl Configurator {
         let reports = match self.settings.reports() {
             Ok(p) if !p.is_empty() => p,
             Ok(_) => {
-                self.message("Selecciona una opcion de DPI, luces, botones o rueda.", true);
+                self.message("Selecciona una opción de DPI, luces, botones o rueda.", true);
                 return;
             }
             Err(e) => {
@@ -151,24 +153,24 @@ impl Configurator {
         };
         if self.dry_run {
             self.message(
-                format!("Simulacion correcta: {} reportes, 0 escrituras al mouse.", reports.len()),
+                format!("Simulación correcta: {} reportes, ningún cambio enviado al mouse.", reports.len()),
                 false,
             );
             return;
         }
         if !self.armed {
-            self.message("Marca la autorizacion antes de escribir en el HID.", true);
+            self.message("Marca la autorización antes de escribir en el HID.", true);
             return;
         }
         let target = self.devices.get(self.selected).filter(|d| d.eligible).map(|d| d.path.clone());
         let result = match target {
-            Some(path) => device::apply(&path, &reports),
-            None => Err("No hay una interfaz USB del mouse valida para escribir.".into()),
+            Some(path) => device::apply(&path, &reports, self.transport),
+            None => Err("No hay una interfaz USB del mouse válida para escribir.".into()),
         };
         self.reset_consent();
         match result {
-            Ok(msg) => self.message(format!("{msg} Simulacion reactivada."), false),
-            Err(e) => self.message(format!("{e} Simulacion reactivada."), true),
+            Ok(msg) => self.message(format!("{msg} Simulación reactivada."), false),
+            Err(e) => self.message(format!("{e} Simulación reactivada."), true),
         }
     }
 
@@ -186,7 +188,7 @@ impl Configurator {
             let connected = self.devices.iter().any(|d| d.eligible);
             ui.colored_label(
                 if connected { ACCENT } else { Color32::YELLOW },
-                if connected { "● Mouse detectado" } else { "● Mouse sin detectar" },
+                if connected { "● USB 18F8:1286 encontrado" } else { "● USB no encontrado" },
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("↻ Buscar mouse").clicked() { self.rescan(); }
@@ -203,7 +205,7 @@ impl Configurator {
         ui.label(RichText::new("18F8 : 1286").monospace().color(ACCENT));
         ui.add_space(18.0);
         ui.separator();
-        ui.label(RichText::new("CONFIGURACION").small().color(SECONDARY));
+        ui.label(RichText::new("CONFIGURACIÓN").small().color(SECONDARY));
         ui.add_space(8.0);
         for page in Page::ALL {
             if ui.add_sized(
@@ -259,17 +261,17 @@ impl Configurator {
                 Self::mouse_drawing(ui);
                 ui.vertical(|ui| {
                     ui.add_space(12.0);
-                    ui.heading("DeathAdder Essential (clon)");
-                    ui.label(RichText::new("Controladora compatible con Instant A704F").color(SECONDARY));
+                    ui.heading("Mouse USB 18F8:1286");
+                    ui.label(RichText::new("ID USB asociado a Instant A704F; controladora aún sin verificar").color(SECONDARY));
                     ui.add_space(12.0);
                     let connected = self.devices.iter().any(|d| d.eligible);
                     ui.colored_label(
                         if connected { ACCENT } else { Color32::YELLOW },
                         if connected { "Interfaz HID encontrada" } else { "Conecta el mouse y pulsa Buscar" },
                     );
-                    ui.label("USB 18F8:1286");
+                    ui.label("No se ha leído el DPI real del mouse");
                     ui.add_space(14.0);
-                    if ui.button("Ver diagnostico USB  →").clicked() { self.page = Page::Diagnostics; }
+                    if ui.button("Ver diagnóstico USB  →").clicked() { self.page = Page::Diagnostics; }
                 });
             });
         });
@@ -278,12 +280,12 @@ impl Configurator {
         ui.columns(2, |cols| {
             cols[0].group(|ui| {
                 ui.heading("Sensibilidad");
-                ui.label(format!("{} CPI", self.settings.profiles.get(self.settings.active).copied().unwrap_or(3) as u16 * 200));
+                ui.label(format!("{} CPI (valor previsto)", self.settings.profiles.get(self.settings.active).copied().unwrap_or(3) as u16 * 200));
                 ui.label(RichText::new("4 perfiles configurables").color(SECONDARY));
                 if ui.button("Editar DPI  →").clicked() { self.page = Page::Dpi; }
             });
             cols[1].group(|ui| {
-                ui.heading("Iluminacion");
+                ui.heading("Iluminación");
                 ui.label(self.settings.light.label());
                 ui.label(RichText::new("Cambiar efectos sin Synapse").color(SECONDARY));
                 if ui.button("Editar luces  →").clicked() { self.page = Page::Lights; }
@@ -292,10 +294,10 @@ impl Configurator {
         ui.add_space(13.0);
         ui.group(|ui| {
             ui.heading("Primera prueba recomendada");
-            ui.label("1. Abre Diagnostico para confirmar el HID correcto.");
-            ui.label("2. En Iluminacion selecciona Apagada.");
+            ui.label("1. Abre Diagnóstico para confirmar el HID correcto.");
+            ui.label("2. En Iluminación selecciona Apagada.");
             ui.label("3. Pulsa Simular y revisa el reporte.");
-            ui.label("4. Solo despues autoriza una escritura real.");
+            ui.label("4. Solo después autoriza una escritura real.");
             if ui.button("Preparar prueba RGB apagado").clicked() {
                 self.settings.apply_dpi = false;
                 self.settings.apply_wheel = false;
@@ -310,8 +312,22 @@ impl Configurator {
     }
 
     fn dpi(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Sensibilidad (DPI)", "Elige hasta cuatro velocidades y decide cual esta activa.");
+        Self::title(ui, "Sensibilidad (DPI)", "Elige hasta cuatro velocidades y decide cuál está activa.");
         ui.label(RichText::new("200 a 3000 CPI nominales, en incrementos de 200.").color(SECONDARY));
+        ui.add_space(12.0);
+        let active = self.settings.active.min(3);
+        ui.group(|ui| {
+            ui.heading(format!("DPI seleccionado: {} CPI", self.settings.profiles[active] as u16 * 200));
+            ui.label(RichText::new("Valor configurado en la aplicación, no medido en el mouse.").color(SECONDARY));
+            let changed = ui.add(egui::Slider::new(&mut self.settings.profiles[active], 1..=15)
+                .text("Ajustar sensibilidad principal (×200 CPI)")).changed();
+            if changed {
+                self.settings.enabled[active] = true;
+                self.settings.apply_dpi = true;
+                self.reset_consent();
+            }
+            ui.label("Para cambiar de perfil, marca «Usar» en uno de los cuatro perfiles inferiores.");
+        });
         ui.add_space(12.0);
         for i in 0..4 {
             let mut changed = false;
@@ -332,12 +348,22 @@ impl Configurator {
             }
             ui.add_space(6.0);
         }
-        ui.label(RichText::new("El perfil activo debe permanecer habilitado. Se validara antes de enviar.").color(SECONDARY));
-        ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicacion");
+        ui.label(RichText::new("Se envían los cuatro perfiles cuando aplicas el DPI. El activo debe estar habilitado.").color(SECONDARY));
+        ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación");
     }
 
     fn lighting(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Iluminacion", "Elige un efecto; no se requiere Razer Synapse.");
+        Self::title(ui, "Iluminación", "Elige un efecto y pruébalo; el cambio no es automático."); 
+        if ui.button("Preparar prueba: apagar la luz (solo RGB)").clicked() {
+            self.settings.apply_light = true;
+            self.settings.light = Light::Off;
+            self.settings.apply_dpi = false;
+            self.settings.apply_wheel = false;
+            self.settings.apply_buttons = false;
+            self.reset_consent();
+            self.message("Iluminación apagada preparada. Pulsa «Simular» y revisa los comandos antes de autorizar una prueba real.", false);
+        }
+        ui.add_space(8.0);
         ui.group(|ui| {
             ui.label(RichText::new("EFECTO").color(SECONDARY));
             ui.add_space(8.0);
@@ -349,15 +375,16 @@ impl Configurator {
             }
         });
         ui.add_space(16.0);
-        ui.checkbox(&mut self.settings.apply_light, "Incluir iluminacion en la siguiente aplicacion");
-        ui.label(RichText::new("La controladora ofrece modos predefinidos; no hay RGB por zona ni selector de color real.").color(SECONDARY));
+        ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación");
+        ui.label(RichText::new("Solo modos predefinidos. No es compatible con RGB por zona ni colores personalizados.").color(SECONDARY));
+        ui.label(RichText::new("Si no cambia al aplicarlo, visita Diagnóstico: el envío de 8 bytes no está verificado en Windows.").color(SECONDARY));
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui) {
         Self::title(ui, "Asignaciones", "Dos botones laterales con funciones claras.");
         ui.group(|ui| {
             ui.heading("Boton delantero");
-            ui.label(RichText::new("Identificador fisico 05").color(SECONDARY));
+            ui.label(RichText::new("Identificador físico 05").color(SECONDARY));
             egui::ComboBox::from_id_salt("front_assignment")
                 .selected_text(self.settings.front.label())
                 .show_ui(ui, |ui| {
@@ -372,7 +399,7 @@ impl Configurator {
         ui.add_space(10.0);
         ui.group(|ui| {
             ui.heading("Boton trasero");
-            ui.label(RichText::new("Identificador fisico 04").color(SECONDARY));
+            ui.label(RichText::new("Identificador físico 04").color(SECONDARY));
             egui::ComboBox::from_id_salt("rear_assignment")
                 .selected_text(self.settings.rear.label())
                 .show_ui(ui, |ui| {
@@ -385,7 +412,7 @@ impl Configurator {
                 });
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicacion");
+        ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicación");
         ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aqui.").color(SECONDARY));
     }
 
@@ -400,11 +427,11 @@ impl Configurator {
             }
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicacion");
+        ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicación");
     }
 
     fn diagnostics(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Diagnostico USB", "Informacion observable; sin lecturas de firmware.");
+        Self::title(ui, "Diagnóstico USB", "Información observable; sin lecturas de firmware.");
         ui.horizontal(|ui| {
             if ui.button("↻ Volver a buscar").clicked() { self.rescan(); }
             ui.label(RichText::new("VID 18F8  •  PID 1286").monospace().color(ACCENT));
@@ -431,10 +458,23 @@ impl Configurator {
                 ui.label(format!("Fabricante: {}", d.manufacturer));
                 ui.label(format!("Interface: {}", d.interface_number));
                 ui.label(format!("Usage: {:04X}:{:04X}", d.usage_page, d.usage));
-                ui.label(format!("Escribible segun heuristica: {}", if d.eligible { "Si" } else { "No" }));
+                ui.label(format!("Escribible segun heuristica: {}", if d.eligible { "Sí" } else { "No" }));
                 ui.label(RichText::new(&d.path).monospace().small().color(SECONDARY));
             }
         }
+        ui.add_space(17.0);
+        ui.heading("Formato de comunicación HID");
+        ui.label("El proyecto original Linux utiliza 16 bytes; nuestra versión Windows comenzó con 8. Ninguno se ha validado en tu hardware.");
+        let changed = ui.radio_value(&mut self.transport, protocol::Transport::Standard8,
+            protocol::Transport::Standard8.label()).changed()
+            | ui.radio_value(&mut self.transport, protocol::Transport::LinuxReference16,
+            protocol::Transport::LinuxReference16.label()).changed();
+        if changed { self.reset_consent(); }
+        if self.transport == protocol::Transport::LinuxReference16 {
+            ui.colored_label(Color32::YELLOW,
+                "EXPERIMENTAL: permite únicamente una prueba de iluminación. Se desconoce si Windows acepta el ID 0x21.");
+        }
+        ui.label("Ejecuta a704f-diag.exe para generar %LOCALAPPDATA%\\ClonControl\\diagnostico.txt sin escribir al USB.");
         ui.add_space(17.0);
         ui.heading("Vista previa de comandos");
         match self.settings.reports() {
@@ -443,34 +483,40 @@ impl Configurator {
             }
             Ok(packets) => {
                 for (i, packet) in packets.iter().enumerate() {
-                    ui.monospace(format!("{:02}  {}", i + 1, protocol::hex(packet)));
+                    match self.transport.encode(packet) {
+                        Ok(bytes) => ui.monospace(format!("{:02}  {}", i + 1,
+                            bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" "))),
+                        Err(e) => ui.colored_label(Color32::LIGHT_RED, e),
+                    };
                 }
             }
             Err(e) => { ui.colored_label(Color32::LIGHT_RED, e); }
         }
         ui.add_space(15.0);
-        ui.label(RichText::new("Estos comandos son experimentales y no garantizan efecto en tu unidad. Ninguna pantalla envia datos sin confirmacion.").color(SECONDARY));
+        ui.label(RichText::new("Estos comandos son experimentales y no garantizan efecto en tu unidad. Ninguna pantalla envía datos sin confirmación.").color(SECONDARY));
     }
 
     fn action_bar(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("CAMBIOS PENDIENTES").color(SECONDARY).small());
+            ui.label(RichText::new("REPORTES PREPARADOS").color(SECONDARY).small());
             ui.colored_label(ACCENT, format!("{} reportes", self.pending_count()));
             ui.separator();
-            ui.checkbox(&mut self.dry_run, "Solo simular");
-            ui.checkbox(&mut self.armed, "Autorizo escribir");
+            ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)");
+            ui.checkbox(&mut self.armed, "Autorizo una prueba real");
             if ui.button("Simular").clicked() {
                 self.dry_run = true;
                 self.apply();
             }
-            if ui.button(RichText::new("APLICAR AL MOUSE").strong().color(ACCENT)).clicked() {
+            if ui.add_enabled(!self.dry_run && self.armed && self.pending_count() > 0,
+                egui::Button::new(RichText::new("APLICAR AL MOUSE").strong().color(ACCENT))
+            ).clicked() {
                 self.apply();
             }
             if ui.button("Guardar preset").clicked() { self.save(); }
         });
         ui.label(RichText::new(
-            "Seguridad: la simulacion esta activa por defecto; el permiso se revoca despues de cada envio y al cambiar valores.",
+            "Para cambiar el DPI o las luces: configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
         ).color(SECONDARY).small());
         ui.colored_label(
             if self.error { Color32::LIGHT_RED } else { ACCENT },
