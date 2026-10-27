@@ -16,7 +16,7 @@ fn main() {
                 writeln!(out, "\n#{i} {} | Fabricante: {} | MI {} | Usage {:04X}:{:04X}",
                     d.product, d.manufacturer, d.interface_number, d.usage_page, d.usage).unwrap();
                 writeln!(out, "  Selección actual del configurador: {}",
-                    if d.eligible { "mouse (no confirma escritura)" } else { "excluida (puede ser interfaz HID adicional)" }).unwrap();
+                    if d.eligible { "configuración verificada: FF01:0001 / Feature 07, 7 bytes" } else { "no elegible para configuración" }).unwrap();
                 match device::read_report_descriptor(&d.path) {
                     Ok(bytes) => {
                         let inv = protocol::report_inventory(&bytes);
@@ -44,7 +44,8 @@ fn main() {
         }
         Err(e) => { writeln!(out, "Error de enumeración: {e}").unwrap(); }
     }
-    writeln!(out, "\nLos ID 07/21 de la investigación Linux no prueban soporte HID de Windows.").unwrap();
+    writeln!(out, "\nMI 1 / FF01:0001 anuncia Feature Report ID 07 con 7 bytes en la unidad analizada.").unwrap();
+    writeln!(out, "La aplicación usa un total de 8 bytes con el ID. El envío no se ha probado físicamente.").unwrap();
     writeln!(out, "No se enviaron comandos a ninguna interfaz.").unwrap();
     println!("{out}");
 

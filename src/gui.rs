@@ -50,7 +50,6 @@ pub struct Configurator {
     selected: usize,
     page: Page,
     dry_run: bool,
-    transport: protocol::Transport,
     armed: bool,
     status: String,
     error: bool,
@@ -87,7 +86,6 @@ impl Configurator {
             selected: 0,
             page: Page::Device,
             dry_run: true,
-            transport: protocol::Transport::Standard8,
             armed: false,
             status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
             error: false,
@@ -113,7 +111,7 @@ impl Configurator {
                 self.devices = found;
                 self.selected = self.devices.iter().position(|d| d.eligible).unwrap_or(0);
                 self.message(
-                    format!("{} interfaz(es) HID encontradas. Simulación activa.", self.devices.len()),
+                    format!("{} colecciones HID encontradas. Canal de configuración: {}. Simulación activa.", self.devices.len(), if self.devices.iter().any(|d| d.eligible) { "validado" } else { "no validado" }),
                     false,
                 );
             }
@@ -164,7 +162,7 @@ impl Configurator {
         }
         let target = self.devices.get(self.selected).filter(|d| d.eligible).map(|d| d.path.clone());
         let result = match target {
-            Some(path) => device::apply(&path, &reports, self.transport),
+            Some(path) => device::apply(&path, &reports),
             None => Err("No hay una interfaz USB del mouse válida para escribir.".into()),
         };
         self.reset_consent();
@@ -188,7 +186,7 @@ impl Configurator {
             let connected = self.devices.iter().any(|d| d.eligible);
             ui.colored_label(
                 if connected { ACCENT } else { Color32::YELLOW },
-                if connected { "● USB 18F8:1286 encontrado" } else { "● USB no encontrado" },
+                if connected { "● Configuración HID 07 encontrada" } else { "● Sin canal HID validado" },
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("↻ Buscar mouse").clicked() { self.rescan(); }
@@ -262,12 +260,12 @@ impl Configurator {
                 ui.vertical(|ui| {
                     ui.add_space(12.0);
                     ui.heading("Mouse USB 18F8:1286");
-                    ui.label(RichText::new("ID USB asociado a Instant A704F; controladora aún sin verificar").color(SECONDARY));
+                    ui.label(RichText::new("INSTANT 18F8:1286 — canal Feature 07 identificado en el descriptor").color(SECONDARY));
                     ui.add_space(12.0);
                     let connected = self.devices.iter().any(|d| d.eligible);
                     ui.colored_label(
                         if connected { ACCENT } else { Color32::YELLOW },
-                        if connected { "Interfaz HID encontrada" } else { "Conecta el mouse y pulsa Buscar" },
+                        if connected { "Canal de configuración MI 1 / FF01:0001" } else { "Canal de configuración sin verificar" },
                     );
                     ui.label("No se ha leído el DPI real del mouse");
                     ui.add_space(14.0);
@@ -458,22 +456,16 @@ impl Configurator {
                 ui.label(format!("Fabricante: {}", d.manufacturer));
                 ui.label(format!("Interface: {}", d.interface_number));
                 ui.label(format!("Usage: {:04X}:{:04X}", d.usage_page, d.usage));
-                ui.label(format!("Escribible segun heuristica: {}", if d.eligible { "Sí" } else { "No" }));
+                ui.label(format!("Colección de configuración validada: {}", if d.eligible { "Sí (Feature 07, ocho bytes)" } else { "No" }));
                 ui.label(RichText::new(&d.path).monospace().small().color(SECONDARY));
             }
         }
         ui.add_space(17.0);
-        ui.heading("Formato de comunicación HID");
-        ui.label("El proyecto original Linux utiliza 16 bytes; nuestra versión Windows comenzó con 8. Ninguno se ha validado en tu hardware.");
-        let changed = ui.radio_value(&mut self.transport, protocol::Transport::Standard8,
-            protocol::Transport::Standard8.label()).changed()
-            | ui.radio_value(&mut self.transport, protocol::Transport::LinuxReference16,
-            protocol::Transport::LinuxReference16.label()).changed();
-        if changed { self.reset_consent(); }
-        if self.transport == protocol::Transport::LinuxReference16 {
-            ui.colored_label(Color32::YELLOW,
-                "EXPERIMENTAL: permite únicamente una prueba de iluminación. Se desconoce si Windows acepta el ID 0x21.");
-        }
+        ui.heading("Canal de configuración identificado");
+        ui.label("MI 1 / FF01:0001 — Feature Report 07 — 7 bytes de datos + 1 byte de ID.");
+        ui.label("El diagnóstico aportado confirmó que la colección #4 anuncia este reporte. La colección del mouse (MI 0) no lo anuncia.");
+        ui.label(RichText::new("Se deshabilitó la trama experimental de 16 bytes: no coincide con el descriptor Windows observado.").color(SECONDARY));
+        ui.label(RichText::new("Un envío aceptado no demuestra que el firmware haya cambiado DPI o luz. Prueba solo apagar la luz antes de tocar DPI.").color(SECONDARY));
         ui.label("Ejecuta a704f-diag.exe para generar %LOCALAPPDATA%\\ClonControl\\diagnostico.txt sin escribir al USB.");
         ui.add_space(17.0);
         ui.heading("Vista previa de comandos");
@@ -483,17 +475,13 @@ impl Configurator {
             }
             Ok(packets) => {
                 for (i, packet) in packets.iter().enumerate() {
-                    match self.transport.encode(packet) {
-                        Ok(bytes) => ui.monospace(format!("{:02}  {}", i + 1,
-                            bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" "))),
-                        Err(e) => ui.colored_label(Color32::LIGHT_RED, e),
-                    };
+                    ui.monospace(format!("{:02}  {}", i + 1, protocol::hex(packet)));
                 }
             }
             Err(e) => { ui.colored_label(Color32::LIGHT_RED, e); }
         }
         ui.add_space(15.0);
-        ui.label(RichText::new("Estos comandos son experimentales y no garantizan efecto en tu unidad. Ninguna pantalla envía datos sin confirmación.").color(SECONDARY));
+        ui.label(RichText::new("La compatibilidad física aún debe comprobarse. No se envían comandos sin consentimiento.").color(SECONDARY));
     }
 
     fn action_bar(&mut self, ui: &mut egui::Ui) {

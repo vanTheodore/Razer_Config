@@ -12,6 +12,14 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## CLON//CONTROL 0.2.3 — canal HID correcto para 18F8:1286
+
+**Diagnóstico aportado por el propietario (Windows):** seis colecciones HID, y solo `MI 1 / Usage FF01:0001` anuncia `Feature Report ID 07`. Su descriptor `85 07 ... 75 08 95 07 B1 02` declara **siete bytes de datos más el ID 07**, por tanto el buffer HIDAPI debe tener **8 bytes**. La colección del mouse `MI 0 / 0001:0002` solo declara entrada y no es un canal de configuración.
+
+En esta versión la app **solo selecciona FF01:0001 en MI 1** si comprueba el descriptor y sus 56 bits para Feature 07. Antes de enviar cada reporte vuelve a comprobar VID:PID, MI, Usage y descriptor: si ya no coincide, no escribe nada. La alternativa experimental de 16 bytes se retira porque no coincide con el descriptor de Windows observado. Se mantiene simulación y confirmación por operación.
+
+**Prueba mínima:** Iluminación → «Preparar prueba: apagar la luz (solo RGB)» → Simular → desactivar simulación → autorizar → Aplicar. Si Windows acepta el envío, observar si se apaga la luz. **No cambies DPI ni botones hasta verificar la prueba.** Un Feature Report declarado y una llamada aceptada no garantizan que el firmware responda.
+
 ## CLON//CONTROL 0.2.2 — diagnóstico completo sin escrituras
 
 Tras el diagnóstico real de un mouse identificado como `INSTANT 18F8:1286`, se observó que el descriptor de 66 bytes de la colección MI 0 / Usage 0001:0002 no anunciaba Feature Reports. Sin embargo, también hay colecciones de MI 1: teclado, consumidor y dos usos privados FF00 y FF01.
@@ -26,9 +34,9 @@ Este diagnóstico no confirma por sí solo que el mouse acepte configuraciones; 
 
 Para cambiar el DPI **de verdad**: Sensibilidad → elegir perfil activo («Usar») → ajustar sensibilidad → Simular → desmarcar «Solo simular» → marcar autorización → «APLICAR AL MOUSE». La pantalla muestra el valor **previsto**, no una lectura del DPI físico. Se envían los cuatro perfiles si se activa «Incluir DPI».
 
-Para probar iluminación: Iluminación → «Preparar prueba: apagar la luz» → Simular → desmarcar simulación, autorizar y aplicar. Si no cambia nada, ejecuta `a704f-diag.exe`: genera un informe de **solo lectura** en `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`, sin número de serie ni ruta USB. Elige en Diagnóstico un transporte solo si el descriptor y la prueba avalan seguir.
+Para probar iluminación: Iluminación → «Preparar prueba: apagar la luz» → Simular → desmarcar simulación, autorizar y aplicar. Si no cambia nada, ejecuta `a704f-diag.exe`: genera un informe de **solo lectura** en `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`, sin número de serie ni ruta USB. Comprueba el canal FF01:0001 / Feature 07 en Diagnóstico antes de enviar.
 
-**Importante:** la investigación de Linux muestra `07 13 7F 17 00 00 00 00` como comando de apagar la luz; su aplicación original envía por HIDAPI una trama de 16 bytes que comienza por `21 09 07 03 01 00 08 00`. En Windows, `HidD_SetFeature` trata el **primer byte como Report ID**; no sabemos todavía si ninguna de las dos tramas es admitida por tu dispositivo. La alternativa de 16 bytes está disponible como ensayo explícito y **limitada a iluminación**. Nunca se envía automáticamente ni se modifica firmware.
+**Importante:** la investigación de Linux muestra `07 13 7F 17 00 00 00 00` como comando de apagar la luz; su aplicación original envía por HIDAPI una trama de 16 bytes que comienza por `21 09 07 03 01 00 08 00`. En Windows, `HidD_SetFeature` trata el **primer byte como Report ID**; no sabemos todavía si ninguna de las dos tramas es admitida por tu dispositivo. **Nota histórica:** la trama de 16 bytes ya no está disponible en la aplicación; el descriptor Windows de este mouse anuncia un buffer de ocho bytes para ID 07.
 
 Un resultado «enviado» solo significa que la llamada HIDAPI devolvió éxito; **no confirma que haya cambiado el mouse**.
 
@@ -67,7 +75,7 @@ Los controles modificados se marcan para su próxima aplicación. **Cambiar un v
 ## Primera prueba
 
 1. Descarga y descomprime el ZIP del release en Windows.
-2. Cierra temporalmente reWASD y ejecuta `a704f-diag.exe`. Confirma `18F8:1286` y la colección mouse `0001:0002`.
+2. Cierra temporalmente reWASD y ejecuta `a704f-diag.exe`. Confirma `18F8:1286` y la colección de configuración `MI 1 / FF01:0001`, Feature 07.
 3. Ejecuta `cloncontrol.exe`. Desmarca DPI, botones y rueda. Activa **Aplicar RGB** y selecciona **Apagada**.
 4. Con **Simulación** activada, pulsa **Simular**. Deberías ver la secuencia `07 13 7F 17 00 00 00 00` en la vista previa, sin ninguna escritura real.
 5. Solo tras identificar la interfaz: desactiva **Simulación**, marca la autorización y aplica. Comprueba la luz del mouse. Si falla, copia el mensaje o el diagnóstico.

@@ -20,7 +20,7 @@ impl Light {
             Self::Medium => "Respiración (5s)",
             Self::Fast => "Respiración (3s)",
             Self::Faster => "Respiración (2s)",
-            Self::VeryFast => "Respiración rapida (1s)",
+            Self::VeryFast => "Respiración rápida (1s)",
             Self::Static => "Fija",
             Self::Off => "Apagada",
         }
@@ -156,36 +156,6 @@ pub fn dpi(active: u8, slot: u8, unit: u8, mask: u8) -> Result<Report, String> {
     }
     Ok(packet(0x09, active, (unit << 4) | (0x08 + slot), mask))
 }
-/// Different, unverified HIDAPI payloads seen in the Linux reference and the USB capture.
-/// The 16-byte form has NOT been confirmed to work via HidD_SetFeature on Windows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Transport {
-    Standard8,
-    LinuxReference16,
-}
-
-impl Transport {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Standard8 => "Reporte de 8 bytes (inicial, sin verificar)",
-            Self::LinuxReference16 => "Trama de referencia de 16 bytes (experimental, solo luz)",
-        }
-    }
-    pub fn encode(self, report: &Report) -> Result<Vec<u8>, String> {
-        match self {
-            Self::Standard8 => Ok(report.to_vec()),
-            Self::LinuxReference16 => {
-                if report[1] != 0x13 {
-                    return Err("La trama experimental de 16 bytes solo está habilitada para iluminación".into());
-                }
-                let mut frame = vec![0x21, 0x09, 0x07, 0x03, 0x01, 0x00, 0x08, 0x00];
-                frame.extend_from_slice(report);
-                Ok(frame)
-            }
-        }
-    }
-}
-
 /// Types of reports declared by one HID top-level collection.
 /// A 0 report ID means the descriptor uses unnumbered reports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -246,6 +216,65 @@ pub fn report_inventory(descriptor: &[u8]) -> ReportInventory {
     result
 }
 
+/// Count payload bits for the given numbered HID Feature Report.
+/// This returns None when the report is missing or the descriptor is malformed.
+/// It is a structural check, not proof that the firmware will honor writes.
+pub fn feature_payload_bits(descriptor: &[u8], wanted_id: u8) -> Option<u32> {
+    let mut globals = (0u32, 0u32, 0u8); // report size, count, ID
+    let mut stack = Vec::new();
+    let mut bits = 0u32;
+    let mut found = false;
+    let mut i = 0usize;
+    while i < descriptor.len() {
+        let prefix = descriptor[i];
+        i += 1;
+        if prefix == 0xFE {
+            if i + 2 > descriptor.len() { return None; }
+            let size = descriptor[i] as usize;
+            i += 2;
+            if i + size > descriptor.len() { return None; }
+            i += size;
+            continue;
+        }
+        let size = match prefix & 3 { 0 => 0, 1 => 1, 2 => 2, _ => 4 };
+        if i + size > descriptor.len() { return None; }
+        let kind = (prefix >> 2) & 3;
+        let tag = prefix >> 4;
+        let mut value = 0u32;
+        for (shift, byte) in descriptor[i..i + size].iter().enumerate() {
+            value |= (*byte as u32) << (shift * 8);
+        }
+        if kind == 1 {
+            match tag {
+                7 => globals.0 = value, // Report Size
+                8 if size == 1 => globals.2 = value as u8, // Report ID
+                9 => globals.1 = value, // Report Count
+                10 => stack.push(globals), // Push
+                11 => { globals = stack.pop()?; }, // Pop
+                _ => {}
+            }
+        } else if kind == 0 && tag == 11 && globals.2 == wanted_id {
+            let chunk = globals.0.checked_mul(globals.1)?;
+            bits = bits.checked_add(chunk)?;
+            found = true;
+        }
+        i += size;
+    }
+    if found { Some(bits) } else { None }
+}
+
+/// Exactly the vendor-defined collection observed on the user's 18F8:1286.
+/// The descriptor announces report 07 with seven bytes of payload.
+pub fn is_verified_config_collection(
+    interface: i32,
+    usage_page: u16,
+    usage: u16,
+    descriptor: &[u8],
+) -> bool {
+    interface == 1 && usage_page == 0xFF01 && usage == 0x0001
+        && feature_payload_bits(descriptor, 7) == Some(56)
+}
+
 pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
     report_inventory(descriptor).feature
 }
@@ -257,14 +286,32 @@ pub fn hex(report: &Report) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const REAL_CONFIG_DESCRIPTOR: [u8; 23] = [
+        0x06, 0x01, 0xFF, 0x09, 0x01, 0xA1, 0x01, 0x85,
+        0x07, 0x09, 0x20, 0x15, 0x00, 0x26, 0xFF, 0x00,
+        0x75, 0x08, 0x95, 0x07, 0xB1, 0x02, 0xC0,
+    ];
     #[test]
-    fn framing_matches_documented_linux_reference() {
-        let rgb = rgb(Light::Off);
-        assert_eq!(Transport::Standard8.encode(&rgb).unwrap(), vec![7, 0x13, 0x7f, 0x17, 0, 0, 0, 0]);
-        assert_eq!(Transport::LinuxReference16.encode(&rgb).unwrap(),
-            vec![0x21, 0x09, 0x07, 0x03, 0x01, 0, 0x08, 0, 0x07, 0x13, 0x7f, 0x17, 0, 0, 0, 0]);
-        assert!(Transport::LinuxReference16.encode(&wheel(Wheel::Volume)).is_err());
-        assert!(Transport::LinuxReference16.encode(&dpi(0, 0, 4, 15).unwrap()).is_err());
+    fn real_device_descriptor_matches_8_byte_feature_report() {
+        assert_eq!(feature_payload_bits(&REAL_CONFIG_DESCRIPTOR, 7), Some(56));
+        assert!(is_verified_config_collection(1, 0xFF01, 1, &REAL_CONFIG_DESCRIPTOR));
+        assert!(!is_verified_config_collection(0, 0xFF01, 1, &REAL_CONFIG_DESCRIPTOR));
+        assert!(!is_verified_config_collection(1, 0xFF00, 1, &REAL_CONFIG_DESCRIPTOR));
+        assert!(!is_verified_config_collection(1, 0xFF01, 2, &REAL_CONFIG_DESCRIPTOR));
+        assert!(!is_verified_config_collection(1, 0xFF01, 1, &[0x85, 0x07, 0x75, 0x08, 0x95, 0x08, 0xB1, 0x02]));
+        assert_eq!(feature_payload_bits(&REAL_CONFIG_DESCRIPTOR, 0x21), None);
+    }
+    #[test]
+    fn feature_payload_bits_handles_stack_and_malformed_data() {
+        let with_stack = [
+            0x85, 0x07, 0x75, 0x08, 0x95, 0x02, 0xB1, 0x02,
+            0xA4, 0x85, 0x08, 0xB1, 0x02, 0xB4,
+            0x95, 0x05, 0xB1, 0x02,
+        ];
+        assert_eq!(feature_payload_bits(&with_stack, 7), Some(56));
+        assert_eq!(feature_payload_bits(&with_stack, 8), Some(16));
+        assert_eq!(feature_payload_bits(&[0x85, 0x07, 0xB4], 7), None);
+        assert_eq!(feature_payload_bits(&[0x85], 7), None);
     }
     #[test]
     fn report_inventory_recognizes_input_output_feature_and_unnumbered() {
