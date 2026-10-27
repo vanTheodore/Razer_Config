@@ -42,6 +42,7 @@ jobs:
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Copy-Item target/release/cloncontrol.exe dist/
           Copy-Item target/release/a704f-diag.exe dist/
+          Copy-Item target/release/a704f-trace.exe dist/
           $hashLines = foreach ($file in (Get-ChildItem dist/*.exe)) {
             "$((Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($file.Name)"
           }
