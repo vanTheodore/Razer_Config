@@ -12,6 +12,12 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## CLON//CONTROL 0.2.5 — análisis del software Instant sin escrituras nuevas
+
+El instalador original de Instant incluye preferencias de DPI y LED y enlaza funciones HID, pero **todavía no se ha demostrado qué bytes envía al mouse ni que funcione con esta unidad**. No se han copiado comandos inventados.
+
+Se añade `a704f-trace.exe`: un comparador **offline** de exportaciones TShark de USB que permite identificar posibles cambios de reportes entre una captura base y una captura de acción de la aplicación original. No toca la conexión USB. Ver [protocolo de investigación y uso](docs/INSTANT_REFERENCE.md). Los dos ejecutables originales permanecen disponibles.
+
 ## CLON//CONTROL 0.2.4 — resultado de Windows separado del efecto físico
 
 Si no observas cambios, **no asumas que el chip es incompatible ni sigas enviando valores al azar**. La interfaz diferencia ahora tres estados:

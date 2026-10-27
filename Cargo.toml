@@ -1,6 +1,6 @@
 [package]
 name = "cloncontrol-a704f"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 rust-version = "1.99"
 description = "Experimental Windows configurator for HID mouse 18F8:1286 / Instant A704F"
@@ -22,3 +22,7 @@ path = "src/main.rs"
 [[bin]]
 name = "a704f-diag"
 path = "src/bin/a704f-diag.rs"
+
+[[bin]]
+name = "a704f-trace"
+path = "src/bin/a704f-trace.rs"
