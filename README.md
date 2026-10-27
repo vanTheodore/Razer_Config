@@ -12,6 +12,18 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## CLON//CONTROL 0.2.4 — resultado de Windows separado del efecto físico
+
+Si no observas cambios, **no asumas que el chip es incompatible ni sigas enviando valores al azar**. La interfaz diferencia ahora tres estados:
+
+- **Simulación:** ningún comando se envió.
+- **HIDAPI aceptó la solicitud:** Windows declaró éxito, pero no se ha demostrado que la iluminación o el DPI cambien.
+- **HIDAPI devolvió un error:** se muestra la descripción concreta para distinguir acceso, formato o desconexión.
+
+Tras **cada intento de escritura real** se guarda un informe de una sola sesión en `%LOCALAPPDATA%\\ClonControl\\ultima_prueba_hid.txt` (reemplaza el anterior). También se ve y copia desde **Diagnóstico → Último resultado real de Windows**. Este registro no contiene rutas HID ni números de serie; incluye la trama enviada, resultado y error de Windows. **Las simulaciones no generan este informe.**
+
+Para diagnosticar la luz: Iluminación → «Preparar prueba: apagar la luz» → Simular → desmarcar «Solo simular» → autorizar → «Aplicar al mouse». Si sigue sin cambiar, comparte el archivo de la última prueba antes de intentar otras opciones. El siguiente paso depende de si la API informa éxito o error.
+
 ## CLON//CONTROL 0.2.3 — canal HID correcto para 18F8:1286
 
 **Diagnóstico aportado por el propietario (Windows):** seis colecciones HID, y solo `MI 1 / Usage FF01:0001` anuncia `Feature Report ID 07`. Su descriptor `85 07 ... 75 08 95 07 B1 02` declara **siete bytes de datos más el ID 07**, por tanto el buffer HIDAPI debe tener **8 bytes**. La colección del mouse `MI 0 / 0001:0002` solo declara entrada y no es un canal de configuración.
