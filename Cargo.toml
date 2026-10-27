@@ -1,6 +1,6 @@
 [package]
 name = "cloncontrol-a704f"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 rust-version = "1.99"
 description = "Experimental Windows configurator for HID mouse 18F8:1286 / Instant A704F"

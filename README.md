@@ -12,6 +12,28 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## CLON//CONTROL 0.2.6 — reconstrucción del ejecutable y lectura opcional
+
+**Resuelto el misterio de las llamadas imposibles.** Inno Setup 5.5.7 aplica el filtro de compresión `CallInstructionOptimized` (variante 5309), que transforma los desplazamientos de `CALL`/`JMP` para favorecer la compresión. Nuestra extracción inicial había omitido el **paso de restauración del filtro**. Al aplicarlo al PE **completo, incluida su firma**, se restauraron 49.513 operandos y el hash Authenticode coincidió exactamente con el digest almacenado en el certificado. Las llamadas observadas se dirigen efectivamente a `HidD_GetFeature` y `HidD_SetFeature`. [Ver demostración reproducible](docs/INSTANT_CALL_TARGET_AUDIT.md).
+
+El programa de Instant llama a `HidD_GetFeature(handle, buffer con ID 07, longitud 32)` y, en ciertas ramas, a `HidD_SetFeature` con prefijos `07 1C 00 20` y `07 20 00 00`. **No sabemos si son inicialización, confirmación, persistencia u otra cosa**. No se han añadido como escrituras en CLON//CONTROL.
+
+Se añade a `a704f-diag.exe` un ensayo opcional de **solo lectura**, nunca automático:
+
+```powershell
+.\\a704f-diag.exe --probe-07
+```
+
+El ensayo revalida VID/PID y descriptor de `MI 1 / FF01:0001`, prepara una petición **GetFeature 07 de 32 bytes**, informa del resultado y guarda `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`. No llama a `SetFeature`, no modifica DPI/LED y no envía ni `07 1C` ni `07 20`. Si la lectura falla por incompatibilidad entre los 32 bytes solicitados y los 8 declarados por Windows, el error es un resultado útil. Sin bandera, el diagnóstico sigue sin solicitar GetFeature.
+
+## Corrección forense: el supuesto intercambio inicial sigue sin identificarse
+
+Audité los bytes originales del PE, las secciones y los destinos CALL `rel32` del bloque de arranque. Algunas llamadas terminan dentro de otras rutinas, en `INT3` o incluso en `.rdata`. **No es correcto llamar «negociación HID» a esa secuencia ni copiarla al mouse.** Los import thunks HID existen, pero estos destinos no coinciden con ellos. Ver [auditoría reproducible](docs/INSTANT_CALL_TARGET_AUDIT.md).
+
+## Investigación estática: el ejecutable reconoce nuestro hardware
+
+El análisis sin ejecutar el instalador `A704x_5in1` encontró comparaciones explícitas de VID:PID `18F8:1286`, selección HID `FF01:0001`, construcción de `07 13 7F XX` para iluminación y `07 09` para DPI. Esto **corrobora** varias partes de nuestro encoder, aunque el mouse no respondió físicamente. Hay un intercambio inicial candidato cuya semántica no está verificada y **no se ha implementado**. Ver [hallazgos y direcciones de desensamblado](docs/INSTANT_STATIC_REVERSE_ENGINEERING.md).
+
 ## CLON//CONTROL 0.2.5 — análisis del software Instant sin escrituras nuevas
 
 El instalador original de Instant incluye preferencias de DPI y LED y enlaza funciones HID, pero **todavía no se ha demostrado qué bytes envía al mouse ni que funcione con esta unidad**. No se han copiado comandos inventados.

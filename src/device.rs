@@ -103,6 +103,37 @@ pub fn apply(path: &str, reports: &[Report]) -> Result<String, String> {
     ))
 }
 
+/// Optional, read-only device probe corresponding to Instant's observed
+/// HidD_GetFeature(handle, buffer[0] = 07, length = 32) call.
+/// This is NOT called at startup or during normal scan, and never writes.
+pub fn probe_feature_07(path: &str) -> Result<Vec<u8>, String> {
+    let api = HidApi::new().map_err(|e| format!("HIDAPI: {e}"))?;
+    let info = api.device_list().find(|dev|
+        dev.vendor_id() == VID && dev.product_id() == PID
+        && dev.path().to_bytes() == path.as_bytes()
+    ).ok_or("No existe el HID seleccionado: vuelve a conectar el mouse")?;
+    if !matches_identity(info.interface_number(), info.usage_page(), info.usage()) {
+        return Err("La lectura opcional está limitada a MI 1 / FF01:0001".into());
+    }
+    let cpath = CString::new(path).map_err(|_| "Ruta HID inválida".to_owned())?;
+    let dev = api.open_path(&cpath)
+        .map_err(|e| format!("Windows no permite abrir la colección: {e}"))?;
+    let descriptor = read_descriptor(&dev)?;
+    if !is_verified_config_collection(
+        info.interface_number(), info.usage_page(), info.usage(), &descriptor,
+    ) {
+        return Err("Descriptor inesperado: no se hace lectura de Report 07".into());
+    }
+    // The vendor's EXE explicitly requests 0x20 bytes, even though the
+    // Windows descriptor advertises a normal 8-byte Feature 07 report.
+    let mut buf = [0u8; 32];
+    buf[0] = 0x07;
+    let count = dev.get_feature_report(&mut buf)
+        .map_err(|e| format!("GetFeature 07 (32 bytes) falló: {e}"))?;
+    if count > buf.len() { return Err("HIDAPI informó una longitud imposible".into()); }
+    Ok(buf[..count].to_vec())
+}
+
 /// Diagnostic only; opened without HID SetFeature and never used to send.
 pub fn read_report_descriptor(path: &str) -> Result<Vec<u8>, String> {
     let api = HidApi::new().map_err(|e| format!("HIDAPI: {e}"))?;
