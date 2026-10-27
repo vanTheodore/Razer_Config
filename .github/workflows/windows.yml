@@ -16,14 +16,24 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 65
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Rust stable MSVC
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.1
+          components: clippy, rustfmt
           targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
+      - name: Verify installed compiler
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          if ((rustc --version) -notmatch 'rustc 1\.99\.1') { throw 'Expected Rust 1.99.1' }
       - name: Tests (also checks both executables)
         run: cargo test --all-targets
+      - name: Clippy checks
+        run: cargo clippy --all-targets
       - name: Build release
         run: cargo build --release --bins
       - name: Package portable binaries and hashes
@@ -38,12 +48,13 @@ jobs:
           $hashLines | Set-Content -Path dist/SHA256SUMS.txt -Encoding utf8
           Compress-Archive -Path dist/*.exe -DestinationPath dist/ClonControl-Windows-x64.zip
       - name: Keep downloadable build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cloncontrol-windows-x64
           path: |
             dist/ClonControl-Windows-x64.zip
             dist/SHA256SUMS.txt
+            Cargo.lock
           if-no-files-found: error
           retention-days: 14
 
@@ -56,7 +67,7 @@ jobs:
       contents: write
     steps:
       - name: Download tested binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cloncontrol-windows-x64
           path: release
@@ -79,9 +90,9 @@ jobs:
           RELEASE_TAG: ${{ steps.meta.outputs.tag }}
           IS_PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
-          printf '%s\n'             'CLON//CONTROL experimental, Rust, Windows x64.'             ''             'Binaries passed cargo test and cargo build on a Windows runner.'             'Not tested against real A704F hardware. Does not update firmware.'             'First run a704f-diag.exe (read-only); keep simulation enabled in the GUI.'             > release-notes.md
+          printf '%s\n'             'CLON//CONTROL experimental, Rust 1.99.1, Windows x64.'             ''             'Binaries passed cargo test and cargo build on a Windows runner.'             'Not tested against real A704F hardware. Does not update firmware.'             'First run a704f-diag.exe (read-only); keep simulation enabled in the GUI.'             > release-notes.md
           EXTRA=()
           if [[ "$IS_PRERELEASE" == "true" ]]; then EXTRA+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" release/ClonControl-Windows-x64.zip release/SHA256SUMS.txt \
+          gh release create "$RELEASE_TAG" release/ClonControl-Windows-x64.zip release/SHA256SUMS.txt release/Cargo.lock \
             --target "$GITHUB_SHA" --title "CLON//CONTROL $RELEASE_TAG" \
             --notes-file release-notes.md "${EXTRA[@]}"
