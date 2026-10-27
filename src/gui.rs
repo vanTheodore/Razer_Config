@@ -89,7 +89,7 @@ impl Configurator {
             dry_run: true,
             transport: protocol::Transport::Standard8,
             armed: false,
-            status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en USB.".into()),
+            status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
             error: false,
         };
         app.rescan();
@@ -113,7 +113,7 @@ impl Configurator {
                 self.devices = found;
                 self.selected = self.devices.iter().position(|d| d.eligible).unwrap_or(0);
                 self.message(
-                    format!("{} interfaz(es) HID encontradas. Símulación activa.", self.devices.len()),
+                    format!("{} interfaz(es) HID encontradas. Simulación activa.", self.devices.len()),
                     false,
                 );
             }
@@ -153,7 +153,7 @@ impl Configurator {
         };
         if self.dry_run {
             self.message(
-                format!("Símulación correcta: {} reportes, 0 escrituras al mouse.", reports.len()),
+                format!("Simulación correcta: {} reportes, ningún cambio enviado al mouse.", reports.len()),
                 false,
             );
             return;
@@ -169,8 +169,8 @@ impl Configurator {
         };
         self.reset_consent();
         match result {
-            Ok(msg) => self.message(format!("{msg} Símulación reactivada."), false),
-            Err(e) => self.message(format!("{e} Símulación reactivada."), true),
+            Ok(msg) => self.message(format!("{msg} Simulación reactivada."), false),
+            Err(e) => self.message(format!("{e} Simulación reactivada."), true),
         }
     }
 
@@ -296,7 +296,7 @@ impl Configurator {
             ui.heading("Primera prueba recomendada");
             ui.label("1. Abre Diagnóstico para confirmar el HID correcto.");
             ui.label("2. En Iluminación selecciona Apagada.");
-            ui.label("3. Pulsa Símular y revisa el reporte.");
+            ui.label("3. Pulsa Simular y revisa el reporte.");
             ui.label("4. Solo después autoriza una escritura real.");
             if ui.button("Preparar prueba RGB apagado").clicked() {
                 self.settings.apply_dpi = false;
@@ -306,19 +306,19 @@ impl Configurator {
                 self.settings.light = Light::Off;
                 self.reset_consent();
                 self.page = Page::Lights;
-                self.message("RGB apagado preparado. Símula antes de conectar realmente.", false);
+                self.message("RGB apagado preparado. Simula antes de conectar realmente.", false);
             }
         });
     }
 
     fn dpi(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Sensibilidad (DPI)", "Elige hasta cuatro velocidades y decide cual está activa.");
+        Self::title(ui, "Sensibilidad (DPI)", "Elige hasta cuatro velocidades y decide cuál está activa.");
         ui.label(RichText::new("200 a 3000 CPI nominales, en incrementos de 200.").color(SECONDARY));
         ui.add_space(12.0);
         let active = self.settings.active.min(3);
         ui.group(|ui| {
             ui.heading(format!("DPI seleccionado: {} CPI", self.settings.profiles[active] as u16 * 200));
-            ui.label(RichText::new("Valor previsto; no se puede leer el DPI real desde este configurador.").color(SECONDARY));
+            ui.label(RichText::new("Valor configurado en la aplicación, no medido en el mouse.").color(SECONDARY));
             let changed = ui.add(egui::Slider::new(&mut self.settings.profiles[active], 1..=15)
                 .text("Ajustar sensibilidad principal (×200 CPI)")).changed();
             if changed {
@@ -348,7 +348,7 @@ impl Configurator {
             }
             ui.add_space(6.0);
         }
-        ui.label(RichText::new("Se envían los cuatro perfiles cuando aplicas el DPI. El activo debe estár habilitado.").color(SECONDARY));
+        ui.label(RichText::new("Se envían los cuatro perfiles cuando aplicas el DPI. El activo debe estar habilitado.").color(SECONDARY));
         ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación");
     }
 
@@ -361,7 +361,7 @@ impl Configurator {
             self.settings.apply_wheel = false;
             self.settings.apply_buttons = false;
             self.reset_consent();
-            self.message("Iluminación apagada preparada. Pulsa Símular; luego autoriza una prueba real.", false);
+            self.message("Iluminación apagada preparada. Pulsa «Simular» y revisa los comandos antes de autorizar una prueba real.", false);
         }
         ui.add_space(8.0);
         ui.group(|ui| {
@@ -377,7 +377,7 @@ impl Configurator {
         ui.add_space(16.0);
         ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación");
         ui.label(RichText::new("Solo modos predefinidos. No es compatible con RGB por zona ni colores personalizados.").color(SECONDARY));
-        ui.label(RichText::new("Sí no cambia al aplicarlo, visita Diagnóstico: el envío de 8 bytes no está verificado en Windows.").color(SECONDARY));
+        ui.label(RichText::new("Si no cambia al aplicarlo, visita Diagnóstico: el envío de 8 bytes no está verificado en Windows.").color(SECONDARY));
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui) {
@@ -431,7 +431,7 @@ impl Configurator {
     }
 
     fn diagnostics(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Diagnóstico USB", "Informacion observable; sin lecturas de firmware.");
+        Self::title(ui, "Diagnóstico USB", "Información observable; sin lecturas de firmware.");
         ui.horizontal(|ui| {
             if ui.button("↻ Volver a buscar").clicked() { self.rescan(); }
             ui.label(RichText::new("VID 18F8  •  PID 1286").monospace().color(ACCENT));
@@ -464,7 +464,7 @@ impl Configurator {
         }
         ui.add_space(17.0);
         ui.heading("Formato de comunicación HID");
-        ui.label("El proyecto original Linux utiliza 16 bytes; nuestra versión Windows comenzó con 8. Ninguno se ha válidado en tu hardware.");
+        ui.label("El proyecto original Linux utiliza 16 bytes; nuestra versión Windows comenzó con 8. Ninguno se ha validado en tu hardware.");
         let changed = ui.radio_value(&mut self.transport, protocol::Transport::Standard8,
             protocol::Transport::Standard8.label()).changed()
             | ui.radio_value(&mut self.transport, protocol::Transport::LinuxReference16,
@@ -479,7 +479,7 @@ impl Configurator {
         ui.heading("Vista previa de comandos");
         match self.settings.reports() {
             Ok(packets) if packets.is_empty() => {
-                ui.label("Sín cambios seleccionados para aplicar.");
+                ui.label("Sin cambios seleccionados para aplicar.");
             }
             Ok(packets) => {
                 for (i, packet) in packets.iter().enumerate() {
@@ -493,7 +493,7 @@ impl Configurator {
             Err(e) => { ui.colored_label(Color32::LIGHT_RED, e); }
         }
         ui.add_space(15.0);
-        ui.label(RichText::new("Estos comandos son experimentales y no garantizan efecto en tu unidad. Ninguna pantalla envía datos sin confirmacion.").color(SECONDARY));
+        ui.label(RichText::new("Estos comandos son experimentales y no garantizan efecto en tu unidad. Ninguna pantalla envía datos sin confirmación.").color(SECONDARY));
     }
 
     fn action_bar(&mut self, ui: &mut egui::Ui) {
@@ -504,7 +504,7 @@ impl Configurator {
             ui.separator();
             ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)");
             ui.checkbox(&mut self.armed, "Autorizo una prueba real");
-            if ui.button("Símular").clicked() {
+            if ui.button("Simular").clicked() {
                 self.dry_run = true;
                 self.apply();
             }
@@ -516,7 +516,7 @@ impl Configurator {
             if ui.button("Guardar preset").clicked() { self.save(); }
         });
         ui.label(RichText::new(
-            "Para cambiar el DPI o las luces: configura, pulsa Símular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
+            "Para cambiar el DPI o las luces: configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
         ).color(SECONDARY).small());
         ui.colored_label(
             if self.error { Color32::LIGHT_RED } else { ACCENT },

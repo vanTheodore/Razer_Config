@@ -12,6 +12,18 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## CLON//CONTROL 0.2.1 — DPI, iluminación y diagnóstico
+
+**Compatibilidad pendiente:** se eligió 18F8:1286 porque la investigación publicada lo asocia al chip A704F, pero el VID/PID no prueba que el firmware de tu unidad acepte sus comandos.
+
+Para cambiar el DPI **de verdad**: Sensibilidad → elegir perfil activo («Usar») → ajustar sensibilidad → Simular → desmarcar «Solo simular» → marcar autorización → «APLICAR AL MOUSE». La pantalla muestra el valor **previsto**, no una lectura del DPI físico. Se envían los cuatro perfiles si se activa «Incluir DPI».
+
+Para probar iluminación: Iluminación → «Preparar prueba: apagar la luz» → Simular → desmarcar simulación, autorizar y aplicar. Si no cambia nada, ejecuta `a704f-diag.exe`: genera un informe de **solo lectura** en `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`, sin número de serie ni ruta USB. Elige en Diagnóstico un transporte solo si el descriptor y la prueba avalan seguir.
+
+**Importante:** la investigación de Linux muestra `07 13 7F 17 00 00 00 00` como comando de apagar la luz; su aplicación original envía por HIDAPI una trama de 16 bytes que comienza por `21 09 07 03 01 00 08 00`. En Windows, `HidD_SetFeature` trata el **primer byte como Report ID**; no sabemos todavía si ninguna de las dos tramas es admitida por tu dispositivo. La alternativa de 16 bytes está disponible como ensayo explícito y **limitada a iluminación**. Nunca se envía automáticamente ni se modifica firmware.
+
+Un resultado «enviado» solo significa que la llamada HIDAPI devolvió éxito; **no confirma que haya cambiado el mouse**.
+
 ## CLON//CONTROL 0.2 — interfaz fácil de usar
 
 Interfaz original de tema oscuro inspirada en el flujo de Logitech G HUB, pero sin su marca ni componentes visuales propietarios:
@@ -49,7 +61,7 @@ Los controles modificados se marcan para su próxima aplicación. **Cambiar un v
 1. Descarga y descomprime el ZIP del release en Windows.
 2. Cierra temporalmente reWASD y ejecuta `a704f-diag.exe`. Confirma `18F8:1286` y la colección mouse `0001:0002`.
 3. Ejecuta `cloncontrol.exe`. Desmarca DPI, botones y rueda. Activa **Aplicar RGB** y selecciona **Apagada**.
-4. Con **Simulación** activada, pulsa **Aplicar**. Deberías ver la secuencia `07 13 7F 17 00 00 00 00` en la vista previa, sin ninguna escritura real.
+4. Con **Simulación** activada, pulsa **Simular**. Deberías ver la secuencia `07 13 7F 17 00 00 00 00` en la vista previa, sin ninguna escritura real.
 5. Solo tras identificar la interfaz: desactiva **Simulación**, marca la autorización y aplica. Comprueba la luz del mouse. Si falla, copia el mensaje o el diagnóstico.
 
 Los cambios pueden perderse al desconectar el mouse. No se ejecutan escrituras al inicio de la aplicación.
