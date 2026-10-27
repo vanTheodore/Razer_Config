@@ -279,6 +279,14 @@ pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
     report_inventory(descriptor).feature
 }
 
+/// Reconstruct the sole decision expression visible after the vendor's
+/// GetFeature(07, 32 bytes). A true value is NOT permission to send follow-up
+/// commands: the purpose and side effects of those commands remain unknown.
+pub fn instant_probe_condition(bytes: &[u8]) -> Option<bool> {
+    if bytes.len() < 4 || bytes[0] != 7 { return None; }
+    Some((bytes[3] & 0xFE) >= 0x08)
+}
+
 pub fn hex(report: &Report) -> String {
     report.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ")
 }
@@ -337,6 +345,14 @@ mod tests {
         assert_eq!(feature_report_ids(&desc), vec![7, 0x21]);
         assert_eq!(feature_report_ids(&[0x05, 0x01, 0x09, 0x02]), Vec::<u8>::new());
         assert_eq!(feature_report_ids(&[0x85]), Vec::<u8>::new());
+    }
+    #[test]
+    fn instant_getfeature_condition_is_read_only_and_checks_report_id() {
+        assert_eq!(instant_probe_condition(&[7, 0, 0, 0x09]), Some(true));
+        assert_eq!(instant_probe_condition(&[7, 0, 0, 0x08]), Some(true));
+        assert_eq!(instant_probe_condition(&[7, 0, 0, 0x07]), Some(false));
+        assert_eq!(instant_probe_condition(&[0, 0, 0, 0x09]), None);
+        assert_eq!(instant_probe_condition(&[7, 0, 0]), None);
     }
     #[test]
     fn rgb_off_vector() {

@@ -2,10 +2,13 @@
 fn main() {
     use cloncontrol_a704f::{device, protocol};
     use std::{fmt::Write as _, fs, path::PathBuf};
+    let probe_requested = std::env::args().any(|arg| arg == "--probe-07");
     let mut out = String::new();
     writeln!(out, "CLON//CONTROL — diagnóstico HID de solo lectura (todas las colecciones)").unwrap();
     writeln!(out, "VID:PID {:04X}:{:04X}", protocol::VID, protocol::PID).unwrap();
-    writeln!(out, "Esta herramienta NO envía reportes, no cambia DPI, iluminación ni firmware.").unwrap();
+    writeln!(out, "Sin escrituras: NO cambia DPI, luz ni firmware.").unwrap();
+    writeln!(out, "Sonda GetFeature 07 (solo lectura): {}",
+        if probe_requested { "solicitada manualmente" } else { "no solicitada (usa --probe-07)" }).unwrap();
     match device::scan() {
         Ok(devices) if devices.is_empty() => {
             writeln!(out, "No se encontraron interfaces USB coincidentes.").unwrap();
@@ -17,6 +20,28 @@ fn main() {
                     d.product, d.manufacturer, d.interface_number, d.usage_page, d.usage).unwrap();
                 writeln!(out, "  Selección actual del configurador: {}",
                     if d.eligible { "configuración verificada: FF01:0001 / Feature 07, 7 bytes" } else { "no elegible para configuración" }).unwrap();
+                if d.eligible && probe_requested {
+                    writeln!(out, "  === Lectura optativa HidD_GetFeature (32 bytes, report ID 07) ===").unwrap();
+                    match device::probe_feature_07(&d.path) {
+                        Ok(bytes) => {
+                            let dump = bytes.iter()
+                                .map(|b| format!("{b:02X}"))
+                                .collect::<Vec<_>>().join(" ");
+                            writeln!(out, "  GetFeature devolvió {} bytes: {dump}", bytes.len()).unwrap();
+                            match protocol::instant_probe_condition(&bytes) {
+                                Some(true) => writeln!(out,
+                                    "  La condición observada en Instant (byte[3] & FE >= 08) se cumple; NO se envía seguimiento.").unwrap(),
+                                Some(false) => writeln!(out,
+                                    "  La condición observada en Instant (byte[3] & FE >= 08) NO se cumple.").unwrap(),
+                                None => writeln!(out,
+                                    "  Respuesta corta/inesperada para inspeccionar byte[3]; no inferir compatibilidad.").unwrap(),
+                            }
+                        }
+                        Err(e) => {
+                            writeln!(out, "  Lectura fallida (no se intentó escribir): {e}").unwrap();
+                        }
+                    }
+                }
                 match device::read_report_descriptor(&d.path) {
                     Ok(bytes) => {
                         let inv = protocol::report_inventory(&bytes);
@@ -46,7 +71,7 @@ fn main() {
     }
     writeln!(out, "\nMI 1 / FF01:0001 anuncia Feature Report ID 07 con 7 bytes en la unidad analizada.").unwrap();
     writeln!(out, "La aplicación usa un total de 8 bytes con el ID. El envío no se ha probado físicamente.").unwrap();
-    writeln!(out, "No se enviaron comandos a ninguna interfaz.").unwrap();
+    writeln!(out, "No se enviaron comandos SetFeature a ninguna interfaz.").unwrap();
     println!("{out}");
 
     let directory = std::env::var_os("LOCALAPPDATA")
