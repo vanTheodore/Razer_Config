@@ -1,6 +1,6 @@
 use cloncontrol_a704f::{device, protocol};
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
-use protocol::{Action, Light, Settings, Wheel};
+use protocol::{Action, Light, Settings, SideButton, Wheel};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
 const ACCENT: Color32 = Color32::from_rgb(100, 224, 196);
@@ -51,6 +51,7 @@ pub struct Configurator {
     page: Page,
     dry_run: bool,
     armed: bool,
+    experimental_followup: bool,
     status: String,
     error: bool,
     last_hid_attempt: Option<String>,
@@ -91,6 +92,7 @@ impl Configurator {
             page: Page::Device,
             dry_run: true,
             armed: false,
+            experimental_followup: false,
             status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
             error: false,
             last_hid_attempt: fs::read_to_string(trace_path()).ok(),
@@ -107,6 +109,13 @@ impl Configurator {
     fn reset_consent(&mut self) {
         self.dry_run = true;
         self.armed = false;
+    }
+
+    fn settings_changed(&mut self) {
+        if self.settings.button_test.take().is_some() {
+            self.message("Prueba aislada cancelada. Revisa la configuración y simula de nuevo.", false);
+        }
+        self.reset_consent();
     }
 
     fn rescan(&mut self) {
@@ -163,7 +172,7 @@ impl Configurator {
              Comandos previstos (hex):\n{commands}\n\
              Resultado de Windows: {state}\n\
              Detalle: {details}\n\
-             Efecto físico: DESCONOCIDO; observar manualmente la luz\n\
+             Efecto físico: DESCONOCIDO; comprobar manualmente el resultado\n\
              Nota: este registro no contiene rutas USB ni números de serie.\n"
         );
         self.last_hid_attempt = Some(report.clone());
@@ -175,7 +184,7 @@ impl Configurator {
     }
 
     fn apply(&mut self) {
-        let reports = match self.settings.reports() {
+        let reports = match self.settings.reports_with_experimental_followup(self.experimental_followup) {
             Ok(p) if !p.is_empty() => p,
             Ok(_) => {
                 self.message("Selecciona una opción de DPI, luces, botones o rueda.", true);
@@ -199,7 +208,7 @@ impl Configurator {
         }
         let target = self.devices.get(self.selected).filter(|d| d.eligible).map(|d| d.path.clone());
         let result = match target {
-            Some(path) => device::apply(&path, &reports),
+            Some(path) => device::apply(&path, &reports, self.settings.report_delay_ms),
             None => Err("No hay una interfaz USB del mouse válida para escribir.".into()),
         };
         let record = self.record_hid_result(&reports, &result);
@@ -210,7 +219,7 @@ impl Configurator {
         };
         match result {
             Ok(msg) => self.message(
-                format!("Solicitud HID aceptada por Windows, pero no sabemos si cambió la luz. {msg} {report_note} Simulación reactivada."),
+                format!("Solicitud HID aceptada por Windows; el efecto físico es desconocido. {msg} {report_note} Simulación reactivada."),
                 false
             ),
             Err(e) => self.message(format!("Windows/HIDAPI informó un error: {e}. {report_note} Simulación reactivada."), true),
@@ -218,7 +227,7 @@ impl Configurator {
     }
 
     fn pending_count(&self) -> usize {
-        self.settings.reports().map(|r| r.len()).unwrap_or(0)
+        self.settings.reports_with_experimental_followup(self.experimental_followup).map(|r| r.len()).unwrap_or(0)
     }
 
     fn header(&mut self, ui: &mut egui::Ui) {
@@ -347,7 +356,7 @@ impl Configurator {
                 self.settings.apply_buttons = false;
                 self.settings.apply_light = true;
                 self.settings.light = Light::Off;
-                self.reset_consent();
+                self.settings_changed();
                 self.page = Page::Lights;
                 self.message("RGB apagado preparado. Simula antes de conectar realmente.", false);
             }
@@ -367,7 +376,7 @@ impl Configurator {
             if changed {
                 self.settings.enabled[active] = true;
                 self.settings.apply_dpi = true;
-                self.reset_consent();
+                self.settings_changed();
             }
             ui.label("Para cambiar de perfil, marca «Usar» en uno de los cuatro perfiles inferiores.");
         });
@@ -387,12 +396,14 @@ impl Configurator {
             });
             if changed {
                 self.settings.apply_dpi = true;
-                self.reset_consent();
+                self.settings_changed();
             }
             ui.add_space(6.0);
         }
         ui.label(RichText::new("Se envían los cuatro perfiles cuando aplicas el DPI. El activo debe estar habilitado.").color(SECONDARY));
-        ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
     }
 
     fn lighting(&mut self, ui: &mut egui::Ui) {
@@ -403,7 +414,7 @@ impl Configurator {
             self.settings.apply_dpi = false;
             self.settings.apply_wheel = false;
             self.settings.apply_buttons = false;
-            self.reset_consent();
+            self.settings_changed();
             self.message("Iluminación apagada preparada. Pulsa «Simular» y revisa los comandos antes de autorizar una prueba real.", false);
         }
         ui.add_space(8.0);
@@ -413,18 +424,43 @@ impl Configurator {
             for mode in Light::ALL {
                 if ui.radio_value(&mut self.settings.light, mode, mode.label()).changed() {
                     self.settings.apply_light = true;
-                    self.reset_consent();
+                    self.settings_changed();
                 }
             }
         });
         ui.add_space(16.0);
-        ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
         ui.label(RichText::new("Solo modos predefinidos. No es compatible con RGB por zona ni colores personalizados.").color(SECONDARY));
         ui.label(RichText::new("Si no cambia al aplicarlo, visita Diagnóstico: el envío de 8 bytes no está verificado en Windows.").color(SECONDARY));
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui) {
         Self::title(ui, "Asignaciones", "Dos botones laterales con funciones claras.");
+        ui.group(|ui| {
+            ui.heading("Prueba aislada: mostrar escritorio");
+            ui.label("Prepara solo el botón elegido; no se envían otros ajustes ni el seguimiento experimental.");
+            ui.label("Cambiar ajustes que generan reportes cancela esta prueba.");
+            let mut chosen = None;
+            ui.horizontal(|ui| {
+                if ui.button("Preparar delantero (05)").clicked() { chosen = Some(SideButton::Front); }
+                if ui.button("Preparar trasero (04)").clicked() { chosen = Some(SideButton::Rear); }
+            });
+            if let Some(button) = chosen {
+                self.settings.prepare_button_test(button);
+                self.experimental_followup = false;
+                self.reset_consent();
+                self.message(format!("Prueba del botón {} preparada. Simula antes de autorizar.", button.label()), false);
+            }
+            if let Some(button) = self.settings.button_test {
+                ui.label(format!("Prueba preparada: solo {} → mostrar escritorio (07).", button.label()));
+                if ui.button("Cancelar prueba aislada").clicked() {
+                    self.settings_changed();
+                }
+            }
+        });
+        ui.add_space(10.0);
         ui.group(|ui| {
             ui.heading("Boton delantero");
             ui.label(RichText::new("Identificador físico 05").color(SECONDARY));
@@ -434,7 +470,7 @@ impl Configurator {
                     for action in Action::ALL {
                         if ui.selectable_value(&mut self.settings.front, action, action.label()).changed() {
                             self.settings.apply_buttons = true;
-                            self.reset_consent();
+                            self.settings_changed();
                         }
                     }
                 });
@@ -449,13 +485,15 @@ impl Configurator {
                     for action in Action::ALL {
                         if ui.selectable_value(&mut self.settings.rear, action, action.label()).changed() {
                             self.settings.apply_buttons = true;
-                            self.reset_consent();
+                            self.settings_changed();
                         }
                     }
                 });
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
         ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aqui.").color(SECONDARY));
     }
 
@@ -465,12 +503,14 @@ impl Configurator {
             for mode in Wheel::ALL {
                 if ui.radio_value(&mut self.settings.wheel, mode, mode.label()).changed() {
                     self.settings.apply_wheel = true;
-                    self.reset_consent();
+                    self.settings_changed();
                 }
             }
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
     }
 
     fn diagnostics(&mut self, ui: &mut egui::Ui) {
@@ -513,8 +553,22 @@ impl Configurator {
         ui.label(RichText::new("Un envío aceptado no demuestra que el firmware haya cambiado DPI o luz. Prueba solo apagar la luz antes de tocar DPI.").color(SECONDARY));
         ui.label("Ejecuta a704f-diag.exe para generar %LOCALAPPDATA%\\ClonControl\\diagnostico.txt sin escribir al USB.");
         ui.add_space(17.0);
+        ui.horizontal(|ui| {
+            ui.label("Pausa entre reportes:");
+            if ui.add(egui::DragValue::new(&mut self.settings.report_delay_ms)
+                .range(0..=1000).suffix(" ms")).changed() {
+                self.reset_consent();
+            }
+        });
+        if self.settings.button_test.is_some() {
+            ui.label("El seguimiento experimental está desactivado durante la prueba aislada de botón.");
+        } else if ui.checkbox(&mut self.experimental_followup,
+            "EXPERIMENTAL: enviar 07 20 al finalizar el lote (hipótesis Redgear A20, no confirmada para 1286)")
+            .changed() {
+            self.reset_consent();
+        }
         ui.heading("Vista previa de comandos");
-        match self.settings.reports() {
+        match self.settings.reports_with_experimental_followup(self.experimental_followup) {
             Ok(packets) if packets.is_empty() => {
                 ui.label("Sin cambios seleccionados para aplicar.");
             }
@@ -549,10 +603,12 @@ impl Configurator {
             ui.label(RichText::new("REPORTES PREPARADOS").color(SECONDARY).small());
             ui.colored_label(ACCENT, format!("{} reportes", self.pending_count()));
             ui.separator();
-            ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)");
+            if ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)").changed() {
+                self.armed = false;
+            }
             ui.checkbox(&mut self.armed, "Autorizo una prueba real");
             if ui.button("Simular").clicked() {
-                self.dry_run = true;
+                self.reset_consent();
                 self.apply();
             }
             if ui.add_enabled(!self.dry_run && self.armed && self.pending_count() > 0,
@@ -563,13 +619,32 @@ impl Configurator {
             if ui.button("Guardar preset").clicked() { self.save(); }
         });
         ui.label(RichText::new(
-            "Para cambiar el DPI o las luces: configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
+            "Configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
         ).color(SECONDARY).small());
         ui.colored_label(
             if self.error { Color32::LIGHT_RED } else { ACCENT },
             &self.status,
         );
         ui.add_space(9.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changed_settings_revoke_consent_and_cancel_button_test() {
+        let mut app = Configurator {
+            settings: Settings::default(), devices: Vec::new(), selected: 0,
+            page: Page::Buttons, dry_run: false, armed: true, experimental_followup: false,
+            status: String::new(), error: false, last_hid_attempt: None,
+        };
+        app.settings.prepare_button_test(SideButton::Front);
+        app.settings_changed();
+        assert!(app.dry_run);
+        assert!(!app.armed);
+        assert!(app.settings.button_test.is_none());
     }
 }
 

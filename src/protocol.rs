@@ -78,6 +78,15 @@ impl Action {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SideButton { Front, Rear }
+impl SideButton {
+    pub fn label(self) -> &'static str {
+        match self { Self::Front => "delantero (05)", Self::Rear => "trasero (04)" }
+    }
+    fn code(self) -> u8 { match self { Self::Front => 0x05, Self::Rear => 0x04 } }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -92,6 +101,9 @@ pub struct Settings {
     pub apply_light: bool,
     pub apply_wheel: bool,
     pub apply_buttons: bool,
+    pub report_delay_ms: u16,
+    #[serde(skip)]
+    pub button_test: Option<SideButton>,
 }
 
 impl Default for Settings {
@@ -101,12 +113,14 @@ impl Default for Settings {
             light: Light::Slow, wheel: Wheel::Scroll,
             front: Action::Forward, rear: Action::Back,
             apply_dpi: false, apply_light: false, apply_wheel: false, apply_buttons: false,
+            report_delay_ms: 50, button_test: None,
         }
     }
 }
 
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
+        if self.report_delay_ms > 1000 { return Err("Pausa entre reportes: máximo 1000 ms".into()); }
         if self.active > 3 { return Err("Perfil activo fuera del rango".into()); }
         if self.apply_dpi {
             if self.profiles.iter().any(|&x| !(1..=15).contains(&x)) {
@@ -118,8 +132,19 @@ impl Settings {
         }
         Ok(())
     }
+    pub fn prepare_button_test(&mut self, button: SideButton) {
+        self.apply_dpi = false;
+        self.apply_light = false;
+        self.apply_wheel = false;
+        self.apply_buttons = false;
+        self.button_test = Some(button);
+    }
+
     pub fn reports(&self) -> Result<Vec<Report>, String> {
         self.validate()?;
+        if let Some(button) = self.button_test {
+            return Ok(vec![show_desktop_test(button)]);
+        }
         let mut output = Vec::new();
         if self.apply_light { output.push(rgb(self.light)); }
         if self.apply_wheel { output.push(wheel(self.wheel)); }
@@ -137,11 +162,23 @@ impl Settings {
         }
         Ok(output)
     }
+
+    pub fn reports_with_experimental_followup(&self, enabled: bool) -> Result<Vec<Report>, String> {
+        let mut reports = self.reports()?;
+        // An isolated button test must remain a single report.
+        if enabled && !reports.is_empty() && self.button_test.is_none() {
+            reports.push(experimental_followup());
+        }
+        Ok(reports)
+    }
 }
 
 fn packet(kind: u8, x: u8, y: u8, z: u8) -> Report {
     [0x07, kind, x, y, z, 0, 0, 0]
 }
+/// Hypothesis from the Redgear A20 driver; unconfirmed for 18F8:1286.
+pub fn experimental_followup() -> Report { packet(0x20, 0, 0, 0) }
+pub fn show_desktop_test(button: SideButton) -> Report { packet(0x10, button.code(), 0x07, 0) }
 pub fn rgb(light: Light) -> Report { packet(0x13, 0x7F, light.code(), 0) }
 pub fn wheel(mode: Wheel) -> Report { packet(0x11, mode.code(), 0, 0) }
 pub fn bind(physical: u8, action: Action) -> Result<Report, String> {
@@ -279,6 +316,16 @@ pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
     report_inventory(descriptor).feature
 }
 
+/// Prepare one of the two permitted read-only Feature 07 requests.
+pub fn feature_07_read_buffer(length: usize) -> Result<Vec<u8>, String> {
+    if !matches!(length, 8 | 32) {
+        return Err("GetFeature 07 solo permite buffers de 8 o 32 bytes".into());
+    }
+    let mut buffer = vec![0; length];
+    buffer[0] = 0x07;
+    Ok(buffer)
+}
+
 /// Reconstruct the sole decision expression visible after the vendor's
 /// GetFeature(07, 32 bytes). A true value is NOT permission to send follow-up
 /// commands: the purpose and side effects of those commands remain unknown.
@@ -347,6 +394,17 @@ mod tests {
         assert_eq!(feature_report_ids(&[0x85]), Vec::<u8>::new());
     }
     #[test]
+    fn feature_07_read_requests_use_both_lengths_and_no_payload() {
+        for length in [8, 32] {
+            let buffer = feature_07_read_buffer(length).unwrap();
+            assert_eq!(buffer.len(), length);
+            assert_eq!(buffer[0], 0x07);
+            assert!(buffer[1..].iter().all(|&byte| byte == 0));
+        }
+        assert!(feature_07_read_buffer(0).is_err());
+        assert!(feature_07_read_buffer(16).is_err());
+    }
+    #[test]
     fn instant_getfeature_condition_is_read_only_and_checks_report_id() {
         assert_eq!(instant_probe_condition(&[7, 0, 0, 0x09]), Some(true));
         assert_eq!(instant_probe_condition(&[7, 0, 0, 0x08]), Some(true));
@@ -357,6 +415,18 @@ mod tests {
     #[test]
     fn rgb_off_vector() {
         assert_eq!(rgb(Light::Off), [7, 0x13, 0x7F, 0x17, 0, 0, 0, 0]);
+    }
+    #[test]
+    fn experimental_followup_is_opt_in_and_only_after_a_report() {
+        assert_eq!(experimental_followup(), [7, 0x20, 0, 0, 0, 0, 0, 0]);
+        let mut settings = Settings::default();
+        assert!(settings.reports_with_experimental_followup(true).unwrap().is_empty());
+        settings.apply_light = true;
+        settings.light = Light::Off;
+        assert_eq!(settings.reports_with_experimental_followup(false).unwrap(),
+            vec![[7, 0x13, 0x7F, 0x17, 0, 0, 0, 0]]);
+        assert_eq!(settings.reports_with_experimental_followup(true).unwrap(),
+            vec![[7, 0x13, 0x7F, 0x17, 0, 0, 0, 0], [7, 0x20, 0, 0, 0, 0, 0, 0]]);
     }
     #[test]
     fn dpi_vectors() {
@@ -370,8 +440,36 @@ mod tests {
         assert_eq!(wheel(Wheel::Volume), [7, 0x11, 1, 0, 0, 0, 0, 0]);
     }
     #[test]
+    fn desktop_button_test_is_one_isolated_report_and_not_persisted() {
+        let mut settings = Settings::default();
+        settings.apply_dpi = true;
+        settings.apply_light = true;
+        settings.apply_wheel = true;
+        settings.apply_buttons = true;
+        settings.prepare_button_test(SideButton::Front);
+        assert!(!settings.apply_dpi && !settings.apply_light && !settings.apply_wheel && !settings.apply_buttons);
+        assert_eq!(settings.reports_with_experimental_followup(true).unwrap(),
+            vec![[7, 0x10, 0x05, 0x07, 0, 0, 0, 0]]);
+        settings.apply_light = true; // Isolation also holds if another flag is set.
+        assert_eq!(settings.reports().unwrap(), vec![[7, 0x10, 0x05, 0x07, 0, 0, 0, 0]]);
+        settings.prepare_button_test(SideButton::Rear);
+        assert_eq!(settings.reports().unwrap(), vec![[7, 0x10, 0x04, 0x07, 0, 0, 0, 0]]);
+        let preset = serde_json::to_string(&settings).unwrap();
+        let loaded: Settings = serde_json::from_str(&preset).unwrap();
+        assert!(loaded.button_test.is_none());
+        assert!(loaded.reports().unwrap().is_empty());
+    }
+    #[test]
     fn default_never_writes() {
         assert!(Settings::default().reports().unwrap().is_empty());
+    }
+    #[test]
+    fn report_delay_defaults_and_range() {
+        assert_eq!(Settings::default().report_delay_ms, 50);
+        let mut old_preset: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old_preset.report_delay_ms, 50);
+        old_preset.report_delay_ms = 1001;
+        assert!(old_preset.validate().is_err());
     }
     #[test]
     fn invalid_dpi_fails_closed() {
