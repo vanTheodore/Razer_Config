@@ -78,6 +78,15 @@ impl Action {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SideButton { Front, Rear }
+impl SideButton {
+    pub fn label(self) -> &'static str {
+        match self { Self::Front => "delantero (05)", Self::Rear => "trasero (04)" }
+    }
+    fn code(self) -> u8 { match self { Self::Front => 0x05, Self::Rear => 0x04 } }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -93,6 +102,8 @@ pub struct Settings {
     pub apply_wheel: bool,
     pub apply_buttons: bool,
     pub report_delay_ms: u16,
+    #[serde(skip)]
+    pub button_test: Option<SideButton>,
 }
 
 impl Default for Settings {
@@ -102,7 +113,7 @@ impl Default for Settings {
             light: Light::Slow, wheel: Wheel::Scroll,
             front: Action::Forward, rear: Action::Back,
             apply_dpi: false, apply_light: false, apply_wheel: false, apply_buttons: false,
-            report_delay_ms: 50,
+            report_delay_ms: 50, button_test: None,
         }
     }
 }
@@ -121,8 +132,19 @@ impl Settings {
         }
         Ok(())
     }
+    pub fn prepare_button_test(&mut self, button: SideButton) {
+        self.apply_dpi = false;
+        self.apply_light = false;
+        self.apply_wheel = false;
+        self.apply_buttons = false;
+        self.button_test = Some(button);
+    }
+
     pub fn reports(&self) -> Result<Vec<Report>, String> {
         self.validate()?;
+        if let Some(button) = self.button_test {
+            return Ok(vec![show_desktop_test(button)]);
+        }
         let mut output = Vec::new();
         if self.apply_light { output.push(rgb(self.light)); }
         if self.apply_wheel { output.push(wheel(self.wheel)); }
@@ -143,7 +165,8 @@ impl Settings {
 
     pub fn reports_with_experimental_followup(&self, enabled: bool) -> Result<Vec<Report>, String> {
         let mut reports = self.reports()?;
-        if enabled && !reports.is_empty() {
+        // An isolated button test must remain a single report.
+        if enabled && !reports.is_empty() && self.button_test.is_none() {
             reports.push(experimental_followup());
         }
         Ok(reports)
@@ -155,6 +178,7 @@ fn packet(kind: u8, x: u8, y: u8, z: u8) -> Report {
 }
 /// Hypothesis from the Redgear A20 driver; unconfirmed for 18F8:1286.
 pub fn experimental_followup() -> Report { packet(0x20, 0, 0, 0) }
+pub fn show_desktop_test(button: SideButton) -> Report { packet(0x10, button.code(), 0x07, 0) }
 pub fn rgb(light: Light) -> Report { packet(0x13, 0x7F, light.code(), 0) }
 pub fn wheel(mode: Wheel) -> Report { packet(0x11, mode.code(), 0, 0) }
 pub fn bind(physical: u8, action: Action) -> Result<Report, String> {
@@ -393,6 +417,26 @@ mod tests {
         assert_eq!(bind(5, Action::Forward).unwrap(), [7, 0x10, 5, 5, 0, 0, 0, 0]);
         assert!(bind(1, Action::Forward).is_err());
         assert_eq!(wheel(Wheel::Volume), [7, 0x11, 1, 0, 0, 0, 0, 0]);
+    }
+    #[test]
+    fn desktop_button_test_is_one_isolated_report_and_not_persisted() {
+        let mut settings = Settings::default();
+        settings.apply_dpi = true;
+        settings.apply_light = true;
+        settings.apply_wheel = true;
+        settings.apply_buttons = true;
+        settings.prepare_button_test(SideButton::Front);
+        assert!(!settings.apply_dpi && !settings.apply_light && !settings.apply_wheel && !settings.apply_buttons);
+        assert_eq!(settings.reports_with_experimental_followup(true).unwrap(),
+            vec![[7, 0x10, 0x05, 0x07, 0, 0, 0, 0]]);
+        settings.apply_light = true; // Isolation also holds if another flag is set.
+        assert_eq!(settings.reports().unwrap(), vec![[7, 0x10, 0x05, 0x07, 0, 0, 0, 0]]);
+        settings.prepare_button_test(SideButton::Rear);
+        assert_eq!(settings.reports().unwrap(), vec![[7, 0x10, 0x04, 0x07, 0, 0, 0, 0]]);
+        let preset = serde_json::to_string(&settings).unwrap();
+        let loaded: Settings = serde_json::from_str(&preset).unwrap();
+        assert!(loaded.button_test.is_none());
+        assert!(loaded.reports().unwrap().is_empty());
     }
     #[test]
     fn default_never_writes() {

@@ -1,6 +1,6 @@
 use cloncontrol_a704f::{device, protocol};
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
-use protocol::{Action, Light, Settings, Wheel};
+use protocol::{Action, Light, Settings, SideButton, Wheel};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
 const ACCENT: Color32 = Color32::from_rgb(100, 224, 196);
@@ -111,6 +111,11 @@ impl Configurator {
         self.armed = false;
     }
 
+    fn settings_changed(&mut self) {
+        self.settings.button_test = None;
+        self.reset_consent();
+    }
+
     fn rescan(&mut self) {
         self.reset_consent();
         match device::scan() {
@@ -165,7 +170,7 @@ impl Configurator {
              Comandos previstos (hex):\n{commands}\n\
              Resultado de Windows: {state}\n\
              Detalle: {details}\n\
-             Efecto físico: DESCONOCIDO; observar manualmente la luz\n\
+             Efecto físico: DESCONOCIDO; comprobar manualmente el resultado\n\
              Nota: este registro no contiene rutas USB ni números de serie.\n"
         );
         self.last_hid_attempt = Some(report.clone());
@@ -212,7 +217,7 @@ impl Configurator {
         };
         match result {
             Ok(msg) => self.message(
-                format!("Solicitud HID aceptada por Windows, pero no sabemos si cambió la luz. {msg} {report_note} Simulación reactivada."),
+                format!("Solicitud HID aceptada por Windows; el efecto físico es desconocido. {msg} {report_note} Simulación reactivada."),
                 false
             ),
             Err(e) => self.message(format!("Windows/HIDAPI informó un error: {e}. {report_note} Simulación reactivada."), true),
@@ -349,7 +354,7 @@ impl Configurator {
                 self.settings.apply_buttons = false;
                 self.settings.apply_light = true;
                 self.settings.light = Light::Off;
-                self.reset_consent();
+                self.settings_changed();
                 self.page = Page::Lights;
                 self.message("RGB apagado preparado. Simula antes de conectar realmente.", false);
             }
@@ -369,7 +374,7 @@ impl Configurator {
             if changed {
                 self.settings.enabled[active] = true;
                 self.settings.apply_dpi = true;
-                self.reset_consent();
+                self.settings_changed();
             }
             ui.label("Para cambiar de perfil, marca «Usar» en uno de los cuatro perfiles inferiores.");
         });
@@ -389,7 +394,7 @@ impl Configurator {
             });
             if changed {
                 self.settings.apply_dpi = true;
-                self.reset_consent();
+                self.settings_changed();
             }
             ui.add_space(6.0);
         }
@@ -405,7 +410,7 @@ impl Configurator {
             self.settings.apply_dpi = false;
             self.settings.apply_wheel = false;
             self.settings.apply_buttons = false;
-            self.reset_consent();
+            self.settings_changed();
             self.message("Iluminación apagada preparada. Pulsa «Simular» y revisa los comandos antes de autorizar una prueba real.", false);
         }
         ui.add_space(8.0);
@@ -415,7 +420,7 @@ impl Configurator {
             for mode in Light::ALL {
                 if ui.radio_value(&mut self.settings.light, mode, mode.label()).changed() {
                     self.settings.apply_light = true;
-                    self.reset_consent();
+                    self.settings_changed();
                 }
             }
         });
@@ -428,6 +433,28 @@ impl Configurator {
     fn buttons(&mut self, ui: &mut egui::Ui) {
         Self::title(ui, "Asignaciones", "Dos botones laterales con funciones claras.");
         ui.group(|ui| {
+            ui.heading("Prueba aislada: mostrar escritorio");
+            ui.label("Prepara solo el botón elegido; no se envían otros ajustes ni el seguimiento experimental.");
+            let mut chosen = None;
+            ui.horizontal(|ui| {
+                if ui.button("Preparar delantero (05)").clicked() { chosen = Some(SideButton::Front); }
+                if ui.button("Preparar trasero (04)").clicked() { chosen = Some(SideButton::Rear); }
+            });
+            if let Some(button) = chosen {
+                self.settings.prepare_button_test(button);
+                self.experimental_followup = false;
+                self.reset_consent();
+                self.message(format!("Prueba del botón {} preparada. Simula antes de autorizar.", button.label()), false);
+            }
+            if let Some(button) = self.settings.button_test {
+                ui.label(format!("Prueba preparada: solo {} → mostrar escritorio (07).", button.label()));
+                if ui.button("Cancelar prueba aislada").clicked() {
+                    self.settings_changed();
+                }
+            }
+        });
+        ui.add_space(10.0);
+        ui.group(|ui| {
             ui.heading("Boton delantero");
             ui.label(RichText::new("Identificador físico 05").color(SECONDARY));
             egui::ComboBox::from_id_salt("front_assignment")
@@ -436,7 +463,7 @@ impl Configurator {
                     for action in Action::ALL {
                         if ui.selectable_value(&mut self.settings.front, action, action.label()).changed() {
                             self.settings.apply_buttons = true;
-                            self.reset_consent();
+                            self.settings_changed();
                         }
                     }
                 });
@@ -451,7 +478,7 @@ impl Configurator {
                     for action in Action::ALL {
                         if ui.selectable_value(&mut self.settings.rear, action, action.label()).changed() {
                             self.settings.apply_buttons = true;
-                            self.reset_consent();
+                            self.settings_changed();
                         }
                     }
                 });
@@ -467,7 +494,7 @@ impl Configurator {
             for mode in Wheel::ALL {
                 if ui.radio_value(&mut self.settings.wheel, mode, mode.label()).changed() {
                     self.settings.apply_wheel = true;
-                    self.reset_consent();
+                    self.settings_changed();
                 }
             }
         });
@@ -522,7 +549,9 @@ impl Configurator {
                 self.reset_consent();
             }
         });
-        if ui.checkbox(&mut self.experimental_followup,
+        if self.settings.button_test.is_some() {
+            ui.label("El seguimiento experimental está desactivado durante la prueba aislada de botón.");
+        } else if ui.checkbox(&mut self.experimental_followup,
             "EXPERIMENTAL: enviar 07 20 al finalizar el lote (hipótesis Redgear A20, no confirmada para 1286)")
             .changed() {
             self.reset_consent();
@@ -577,7 +606,7 @@ impl Configurator {
             if ui.button("Guardar preset").clicked() { self.save(); }
         });
         ui.label(RichText::new(
-            "Para cambiar el DPI o las luces: configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
+            "Configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
         ).color(SECONDARY).small());
         ui.colored_label(
             if self.error { Color32::LIGHT_RED } else { ACCENT },

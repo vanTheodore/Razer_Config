@@ -108,6 +108,7 @@ Los controles modificados se marcan para su próxima aplicación. **Cambiar un v
 - Diagnóstico HID separado (`a704f-diag.exe`) **sin escrituras USB**.
 - Detecta exclusivamente `18F8:1286` (ignora el dispositivo virtual `25B1:0003` de reWASD).
 - Cuatro perfiles DPI nominales (200–3000 CPI), modos de iluminación, rueda y dos botones laterales.
+- Prueba aislada «mostrar escritorio» en Botones: elige delantero (`05`) o trasero (`04`), simula y autoriza. Solo prepara ese botón; desactiva el seguimiento experimental y no incluye otros ajustes.
 - Previsualización de reportes HID y modo simulación por defecto.
 - Pausa configurable entre reportes de 0 a 1000 ms (50 ms por defecto), en Diagnóstico.
 - **EXPERIMENTAL:** opción apagada al iniciar que envía `07 20 00 00 00 00 00 00` una vez tras un lote aceptado. Es una **hipótesis del driver Redgear A20**, no confirmada para `18F8:1286`; su función se desconoce. La vista previa la incluye y se mantienen simulación y autorización.
