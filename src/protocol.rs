@@ -316,6 +316,16 @@ pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
     report_inventory(descriptor).feature
 }
 
+/// Prepare one of the two permitted read-only Feature 07 requests.
+pub fn feature_07_read_buffer(length: usize) -> Result<Vec<u8>, String> {
+    if !matches!(length, 8 | 32) {
+        return Err("GetFeature 07 solo permite buffers de 8 o 32 bytes".into());
+    }
+    let mut buffer = vec![0; length];
+    buffer[0] = 0x07;
+    Ok(buffer)
+}
+
 /// Reconstruct the sole decision expression visible after the vendor's
 /// GetFeature(07, 32 bytes). A true value is NOT permission to send follow-up
 /// commands: the purpose and side effects of those commands remain unknown.
@@ -382,6 +392,17 @@ mod tests {
         assert_eq!(feature_report_ids(&desc), vec![7, 0x21]);
         assert_eq!(feature_report_ids(&[0x05, 0x01, 0x09, 0x02]), Vec::<u8>::new());
         assert_eq!(feature_report_ids(&[0x85]), Vec::<u8>::new());
+    }
+    #[test]
+    fn feature_07_read_requests_use_both_lengths_and_no_payload() {
+        for length in [8, 32] {
+            let buffer = feature_07_read_buffer(length).unwrap();
+            assert_eq!(buffer.len(), length);
+            assert_eq!(buffer[0], 0x07);
+            assert!(buffer[1..].iter().all(|&byte| byte == 0));
+        }
+        assert!(feature_07_read_buffer(0).is_err());
+        assert!(feature_07_read_buffer(16).is_err());
     }
     #[test]
     fn instant_getfeature_condition_is_read_only_and_checks_report_id() {

@@ -7,7 +7,7 @@ fn main() {
     writeln!(out, "CLON//CONTROL — diagnóstico HID de solo lectura (todas las colecciones)").unwrap();
     writeln!(out, "VID:PID {:04X}:{:04X}", protocol::VID, protocol::PID).unwrap();
     writeln!(out, "Sin escrituras: NO cambia DPI, luz ni firmware.").unwrap();
-    writeln!(out, "Sonda GetFeature 07 (solo lectura): {}",
+    writeln!(out, "Sonda GetFeature 07 por DeviceIoControl (solo lectura): {}",
         if probe_requested { "solicitada manualmente" } else { "no solicitada (usa --probe-07)" }).unwrap();
     match device::scan() {
         Ok(devices) if devices.is_empty() => {
@@ -21,24 +21,28 @@ fn main() {
                 writeln!(out, "  Selección actual del configurador: {}",
                     if d.eligible { "configuración verificada: FF01:0001 / Feature 07, 7 bytes" } else { "no elegible para configuración" }).unwrap();
                 if d.eligible && probe_requested {
-                    writeln!(out, "  === Lectura optativa HidD_GetFeature (32 bytes, report ID 07) ===").unwrap();
-                    match device::probe_feature_07(&d.path) {
-                        Ok(bytes) => {
-                            let dump = bytes.iter()
-                                .map(|b| format!("{b:02X}"))
-                                .collect::<Vec<_>>().join(" ");
-                            writeln!(out, "  GetFeature devolvió {} bytes: {dump}", bytes.len()).unwrap();
-                            match protocol::instant_probe_condition(&bytes) {
-                                Some(true) => writeln!(out,
-                                    "  La condición observada en Instant (byte[3] & FE >= 08) se cumple; NO se envía seguimiento.").unwrap(),
-                                Some(false) => writeln!(out,
-                                    "  La condición observada en Instant (byte[3] & FE >= 08) NO se cumple.").unwrap(),
-                                None => writeln!(out,
-                                    "  Respuesta corta/inesperada para inspeccionar byte[3]; no inferir compatibilidad.").unwrap(),
+                    for length in [8, 32] {
+                        writeln!(out, "  === GetFeature mediante DeviceIoControl ({length} bytes, report ID 07) ===").unwrap();
+                        match device::probe_feature_07(&d.path, length) {
+                            Ok(bytes) => {
+                                let dump = bytes.iter()
+                                    .map(|b| format!("{b:02X}"))
+                                    .collect::<Vec<_>>().join(" ");
+                                writeln!(out, "  GetFeature devolvió {} bytes: {dump}", bytes.len()).unwrap();
+                                if length == 32 {
+                                    match protocol::instant_probe_condition(&bytes) {
+                                        Some(true) => writeln!(out,
+                                            "  La condición observada en Instant (byte[3] & FE >= 08) se cumple; NO se envía seguimiento.").unwrap(),
+                                        Some(false) => writeln!(out,
+                                            "  La condición observada en Instant (byte[3] & FE >= 08) NO se cumple.").unwrap(),
+                                        None => writeln!(out,
+                                            "  Respuesta corta/inesperada para inspeccionar byte[3]; no inferir compatibilidad.").unwrap(),
+                                    }
+                                }
                             }
-                        }
-                        Err(e) => {
-                            writeln!(out, "  Lectura fallida (no se intentó escribir): {e}").unwrap();
+                            Err(e) => {
+                                writeln!(out, "  Lectura fallida (no se intentó escribir): {e}").unwrap();
+                            }
                         }
                     }
                 }

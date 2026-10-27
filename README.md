@@ -24,7 +24,7 @@ Se añade a `a704f-diag.exe` un ensayo opcional de **solo lectura**, nunca autom
 .\\a704f-diag.exe --probe-07
 ```
 
-El ensayo revalida VID/PID y descriptor de `MI 1 / FF01:0001`, prepara una petición **GetFeature 07 de 32 bytes**, informa del resultado y guarda `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`. No llama a `SetFeature`, no modifica DPI/LED y no envía ni `07 1C` ni `07 20`. Si la lectura falla por incompatibilidad entre los 32 bytes solicitados y los 8 declarados por Windows, el error es un resultado útil. Sin bandera, el diagnóstico sigue sin solicitar GetFeature.
+El ensayo revalida VID/PID y descriptor de `MI 1 / FF01:0001`, prueba **GetFeature 07 con 8 y 32 bytes** mediante `DeviceIoControl` (backend `windows-native`) y guarda ambos resultados en `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`. No llama a `SetFeature`, no modifica DPI/LED y no envía ni `07 1C` ni `07 20`. Ambas lecturas se intentan y registran por separado, incluso si una falla. Sin bandera, el diagnóstico sigue sin solicitar GetFeature.
 
 ## Corrección forense: el supuesto intercambio inicial sigue sin identificarse
 

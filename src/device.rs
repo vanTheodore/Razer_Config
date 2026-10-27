@@ -1,7 +1,7 @@
 //! Windows HID transport for vendor configuration collection FF01:0001 on MI 1.
 //! No firmware flashing, driver replacement or access to normal mouse reports.
 
-use crate::protocol::{hex, is_verified_config_collection, Report, PID, VID};
+use crate::protocol::{feature_07_read_buffer, hex, is_verified_config_collection, Report, PID, VID};
 use hidapi::HidApi;
 use std::{ffi::CString, thread, time::Duration};
 
@@ -105,10 +105,11 @@ pub fn apply(path: &str, reports: &[Report], delay_ms: u16) -> Result<String, St
     ))
 }
 
-/// Optional, read-only device probe corresponding to Instant's observed
-/// HidD_GetFeature(handle, buffer[0] = 07, length = 32) call.
+/// Optional, read-only Feature 07 probe with an 8- or 32-byte buffer.
+/// HIDAPI's windows-native backend uses DeviceIoControl for GetFeature.
 /// This is NOT called at startup or during normal scan, and never writes.
-pub fn probe_feature_07(path: &str) -> Result<Vec<u8>, String> {
+pub fn probe_feature_07(path: &str, length: usize) -> Result<Vec<u8>, String> {
+    let mut buf = feature_07_read_buffer(length)?;
     let api = HidApi::new().map_err(|e| format!("HIDAPI: {e}"))?;
     let info = api.device_list().find(|dev|
         dev.vendor_id() == VID && dev.product_id() == PID
@@ -126,12 +127,8 @@ pub fn probe_feature_07(path: &str) -> Result<Vec<u8>, String> {
     ) {
         return Err("Descriptor inesperado: no se hace lectura de Report 07".into());
     }
-    // The vendor's EXE explicitly requests 0x20 bytes, even though the
-    // Windows descriptor advertises a normal 8-byte Feature 07 report.
-    let mut buf = [0u8; 32];
-    buf[0] = 0x07;
     let count = dev.get_feature_report(&mut buf)
-        .map_err(|e| format!("GetFeature 07 (32 bytes) falló: {e}"))?;
+        .map_err(|e| format!("GetFeature 07 ({length} bytes) falló: {e}"))?;
     if count > buf.len() { return Err("HIDAPI informó una longitud imposible".into()); }
     Ok(buf[..count].to_vec())
 }
