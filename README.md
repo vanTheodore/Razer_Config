@@ -92,7 +92,7 @@ Interfaz original de tema oscuro inspirada en el flujo de Logitech G HUB, pero s
 - **Diagnóstico:** interfaces HID detectadas y vista previa hexadecimal.
 - **Barra inferior fija:** simulación, autorización, aplicación de cambios y guardado del preset.
 
-Los controles modificados se marcan para su próxima aplicación. **Cambiar un valor nunca escribe en el mouse por sí solo**; la confirmación se restablece tras cada modificación o envío.
+Los controles modificados se marcan para su próxima aplicación. **Cambiar un valor o una casilla «Incluir» no escribe en el mouse**: reactiva la simulación y revoca la autorización. Cambiar el modo de simulación o pulsar «Simular» también revoca la autorización; cada intento real requiere una nueva.
 
 ## Rust y dependencias actualizadas
 

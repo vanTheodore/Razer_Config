@@ -112,7 +112,9 @@ impl Configurator {
     }
 
     fn settings_changed(&mut self) {
-        self.settings.button_test = None;
+        if self.settings.button_test.take().is_some() {
+            self.message("Prueba aislada cancelada. Revisa la configuración y simula de nuevo.", false);
+        }
         self.reset_consent();
     }
 
@@ -399,7 +401,9 @@ impl Configurator {
             ui.add_space(6.0);
         }
         ui.label(RichText::new("Se envían los cuatro perfiles cuando aplicas el DPI. El activo debe estar habilitado.").color(SECONDARY));
-        ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
     }
 
     fn lighting(&mut self, ui: &mut egui::Ui) {
@@ -425,7 +429,9 @@ impl Configurator {
             }
         });
         ui.add_space(16.0);
-        ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
         ui.label(RichText::new("Solo modos predefinidos. No es compatible con RGB por zona ni colores personalizados.").color(SECONDARY));
         ui.label(RichText::new("Si no cambia al aplicarlo, visita Diagnóstico: el envío de 8 bytes no está verificado en Windows.").color(SECONDARY));
     }
@@ -435,6 +441,7 @@ impl Configurator {
         ui.group(|ui| {
             ui.heading("Prueba aislada: mostrar escritorio");
             ui.label("Prepara solo el botón elegido; no se envían otros ajustes ni el seguimiento experimental.");
+            ui.label("Cambiar ajustes que generan reportes cancela esta prueba.");
             let mut chosen = None;
             ui.horizontal(|ui| {
                 if ui.button("Preparar delantero (05)").clicked() { chosen = Some(SideButton::Front); }
@@ -484,7 +491,9 @@ impl Configurator {
                 });
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
         ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aqui.").color(SECONDARY));
     }
 
@@ -499,7 +508,9 @@ impl Configurator {
             }
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicación").changed() {
+            self.settings_changed();
+        }
     }
 
     fn diagnostics(&mut self, ui: &mut egui::Ui) {
@@ -592,10 +603,12 @@ impl Configurator {
             ui.label(RichText::new("REPORTES PREPARADOS").color(SECONDARY).small());
             ui.colored_label(ACCENT, format!("{} reportes", self.pending_count()));
             ui.separator();
-            ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)");
+            if ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)").changed() {
+                self.armed = false;
+            }
             ui.checkbox(&mut self.armed, "Autorizo una prueba real");
             if ui.button("Simular").clicked() {
-                self.dry_run = true;
+                self.reset_consent();
                 self.apply();
             }
             if ui.add_enabled(!self.dry_run && self.armed && self.pending_count() > 0,
@@ -613,6 +626,25 @@ impl Configurator {
             &self.status,
         );
         ui.add_space(9.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changed_settings_revoke_consent_and_cancel_button_test() {
+        let mut app = Configurator {
+            settings: Settings::default(), devices: Vec::new(), selected: 0,
+            page: Page::Buttons, dry_run: false, armed: true, experimental_followup: false,
+            status: String::new(), error: false, last_hid_attempt: None,
+        };
+        app.settings.prepare_button_test(SideButton::Front);
+        app.settings_changed();
+        assert!(app.dry_run);
+        assert!(!app.armed);
+        assert!(app.settings.button_test.is_none());
     }
 }
 
