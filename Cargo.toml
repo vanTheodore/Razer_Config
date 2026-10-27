@@ -1,19 +1,19 @@
 [package]
 name = "cloncontrol-a704f"
-version = "0.1.3"
-edition = "2021"
-rust-version = "1.88"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.99"
 description = "Experimental Windows configurator for HID mouse 18F8:1286 / Instant A704F"
 license = "MIT"
 publish = false
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
 
 [target.'cfg(windows)'.dependencies]
-eframe = { version = "=0.33.2", default-features = false, features = ["default_fonts", "glow"] }
-hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "glow"] }
+hidapi = { version = "=2.6.7", default-features = false, features = ["windows-native"] }
 
 [[bin]]
 name = "cloncontrol"
