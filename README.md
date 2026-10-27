@@ -12,6 +12,10 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## Investigación estática: el ejecutable reconoce nuestro hardware
+
+El análisis sin ejecutar el instalador `A704x_5in1` encontró comparaciones explícitas de VID:PID `18F8:1286`, selección HID `FF01:0001`, construcción de `07 13 7F XX` para iluminación y `07 09` para DPI. Esto **corrobora** varias partes de nuestro encoder, aunque el mouse no respondió físicamente. Hay un intercambio inicial candidato cuya semántica no está verificada y **no se ha implementado**. Ver [hallazgos y direcciones de desensamblado](docs/INSTANT_STATIC_REVERSE_ENGINEERING.md).
+
 ## CLON//CONTROL 0.2.5 — análisis del software Instant sin escrituras nuevas
 
 El instalador original de Instant incluye preferencias de DPI y LED y enlaza funciones HID, pero **todavía no se ha demostrado qué bytes envía al mouse ni que funcione con esta unidad**. No se han copiado comandos inventados.
