@@ -12,6 +12,14 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## CLON//CONTROL 0.2.2 — diagnóstico completo sin escrituras
+
+Tras el diagnóstico real de un mouse identificado como `INSTANT 18F8:1286`, se observó que el descriptor de 66 bytes de la colección MI 0 / Usage 0001:0002 no anunciaba Feature Reports. Sin embargo, también hay colecciones de MI 1: teclado, consumidor y dos usos privados FF00 y FF01.
+
+La utilidad `a704f-diag.exe` ahora intenta leer los descriptores de **todas las colecciones HID**. Muestra IDs Input/Output/Feature, longitud, uso, interfaz, posibles errores de permisos y bytes hexadecimales de cada descriptor. No abre interfaces para escribir ni ejecuta HID SetFeature. El informe local se sobrescribe en `%LOCALAPPDATA%\\ClonControl\\diagnostico.txt`; no incluye rutas físicas USB ni números de serie. De momento no probamos comandos HID adicionales sin esos resultados.
+
+Este diagnóstico no confirma por sí solo que el mouse acepte configuraciones; sí discrimina si MI 1 declara reportes de configuración.
+
 ## CLON//CONTROL 0.2.1 — DPI, iluminación y diagnóstico
 
 **Compatibilidad pendiente:** se eligió 18F8:1286 porque la investigación publicada lo asocia al chip A704F, pero el VID/PID no prueba que el firmware de tu unidad acepte sus comandos.

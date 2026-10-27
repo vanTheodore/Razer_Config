@@ -186,15 +186,28 @@ impl Transport {
     }
 }
 
-/// Parse the Report ID of HID Feature items from a descriptor without sending anything.
-pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
+/// Types of reports declared by one HID top-level collection.
+/// A 0 report ID means the descriptor uses unnumbered reports.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReportInventory {
+    pub input: Vec<u8>,
+    pub output: Vec<u8>,
+    pub feature: Vec<u8>,
+}
+
+/// Parse report declarations without interacting with USB. Track the HID
+/// Global Report ID across Push/Pop items (needed for some composite devices).
+/// This indicates what the descriptor *declares*, not what hardware accepts.
+pub fn report_inventory(descriptor: &[u8]) -> ReportInventory {
+    let mut result = ReportInventory::default();
     let mut current_id = 0u8;
-    let mut result = Vec::new();
+    let mut id_stack = Vec::new();
     let mut i = 0;
     while i < descriptor.len() {
         let prefix = descriptor[i];
         i += 1;
         if prefix == 0xFE {
+            // Long item: size, tag, data.
             if i + 2 > descriptor.len() { break; }
             let size = descriptor[i] as usize;
             i += 2;
@@ -206,14 +219,35 @@ pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
         if i + size > descriptor.len() { break; }
         let kind = (prefix >> 2) & 3;
         let tag = prefix >> 4;
-        if kind == 1 && tag == 8 && size == 1 { current_id = descriptor[i]; }
-        if kind == 0 && tag == 11 && !result.contains(&current_id) {
-            result.push(current_id);
+        if kind == 1 {
+            match (tag, size) {
+                (8, 1) => current_id = descriptor[i],
+                (10, _) => id_stack.push(current_id), // PUSH
+                (11, _) => { if let Some(id) = id_stack.pop() { current_id = id; } }, // POP
+                _ => {}
+            }
+        }
+        if kind == 0 {
+            let ids = match tag {
+                8 => Some(&mut result.input),
+                9 => Some(&mut result.output),
+                11 => Some(&mut result.feature),
+                _ => None,
+            };
+            if let Some(ids) = ids {
+                if !ids.contains(&current_id) { ids.push(current_id); }
+            }
         }
         i += size;
     }
-    result.sort_unstable();
+    result.input.sort_unstable();
+    result.output.sort_unstable();
+    result.feature.sort_unstable();
     result
+}
+
+pub fn feature_report_ids(descriptor: &[u8]) -> Vec<u8> {
+    report_inventory(descriptor).feature
 }
 
 pub fn hex(report: &Report) -> String {
@@ -231,6 +265,23 @@ mod tests {
             vec![0x21, 0x09, 0x07, 0x03, 0x01, 0, 0x08, 0, 0x07, 0x13, 0x7f, 0x17, 0, 0, 0, 0]);
         assert!(Transport::LinuxReference16.encode(&wheel(Wheel::Volume)).is_err());
         assert!(Transport::LinuxReference16.encode(&dpi(0, 0, 4, 15).unwrap()).is_err());
+    }
+    #[test]
+    fn report_inventory_recognizes_input_output_feature_and_unnumbered() {
+        let desc = [
+            0x05, 0x01, 0x09, 0x02,
+            0x81, 0x02, // input, implicit report 0
+            0x91, 0x02, // output, implicit report 0
+            0x85, 0x07, 0xB1, 0x02, // feature 7
+            0xA4, // push id 7
+            0x85, 0x21, 0xB1, 0x02, // feature 33
+            0xB4, 0x81, 0x02, // pop -> input 7
+        ];
+        let inv = report_inventory(&desc);
+        assert_eq!(inv.input, vec![0, 7]);
+        assert_eq!(inv.output, vec![0]);
+        assert_eq!(inv.feature, vec![7, 33]);
+        assert_eq!(report_inventory(&[0x85]).feature, Vec::<u8>::new());
     }
     #[test]
     fn descriptor_feature_ids() {
