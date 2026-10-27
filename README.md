@@ -16,7 +16,7 @@ Los runners públicos estándar de GitHub Actions no consumen tus minutos privad
 
 **Resuelto el misterio de las llamadas imposibles.** Inno Setup 5.5.7 aplica el filtro de compresión `CallInstructionOptimized` (variante 5309), que transforma los desplazamientos de `CALL`/`JMP` para favorecer la compresión. Nuestra extracción inicial había omitido el **paso de restauración del filtro**. Al aplicarlo al PE **completo, incluida su firma**, se restauraron 49.513 operandos y el hash Authenticode coincidió exactamente con el digest almacenado en el certificado. Las llamadas observadas se dirigen efectivamente a `HidD_GetFeature` y `HidD_SetFeature`. [Ver demostración reproducible](docs/INSTANT_CALL_TARGET_AUDIT.md).
 
-El programa de Instant llama a `HidD_GetFeature(handle, buffer con ID 07, longitud 32)` y, en ciertas ramas, a `HidD_SetFeature` con prefijos `07 1C 00 20` y `07 20 00 00`. **No sabemos si son inicialización, confirmación, persistencia u otra cosa**. No se han añadido como escrituras en CLON//CONTROL.
+El programa de Instant llama a `HidD_GetFeature(handle, buffer con ID 07, longitud 32)` y, en ciertas ramas, a `HidD_SetFeature` con prefijos `07 1C 00 20` y `07 20 00 00`. **No sabemos si son inicialización, confirmación, persistencia u otra cosa**. CLON//CONTROL no envía `07 1C`; `07 20` solo está disponible como hipótesis experimental opcional, descrita más abajo.
 
 Se añade a `a704f-diag.exe` un ensayo opcional de **solo lectura**, nunca automático:
 
@@ -110,6 +110,7 @@ Los controles modificados se marcan para su próxima aplicación. **Cambiar un v
 - Cuatro perfiles DPI nominales (200–3000 CPI), modos de iluminación, rueda y dos botones laterales.
 - Previsualización de reportes HID y modo simulación por defecto.
 - Pausa configurable entre reportes de 0 a 1000 ms (50 ms por defecto), en Diagnóstico.
+- **EXPERIMENTAL:** opción apagada al iniciar que envía `07 20 00 00 00 00 00 00` una vez tras un lote aceptado. Es una **hipótesis del driver Redgear A20**, no confirmada para `18F8:1286`; su función se desconoce. La vista previa la incluye y se mantienen simulación y autorización.
 - Exige desactivar la simulación y autorizar expresamente cada sesión de escritura.
 - Presets locales en `%LOCALAPPDATA%\\ClonControl\\a704f.json`; no lee configuración del firmware.
 

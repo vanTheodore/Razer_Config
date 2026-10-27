@@ -51,6 +51,7 @@ pub struct Configurator {
     page: Page,
     dry_run: bool,
     armed: bool,
+    experimental_followup: bool,
     status: String,
     error: bool,
     last_hid_attempt: Option<String>,
@@ -91,6 +92,7 @@ impl Configurator {
             page: Page::Device,
             dry_run: true,
             armed: false,
+            experimental_followup: false,
             status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
             error: false,
             last_hid_attempt: fs::read_to_string(trace_path()).ok(),
@@ -175,7 +177,7 @@ impl Configurator {
     }
 
     fn apply(&mut self) {
-        let reports = match self.settings.reports() {
+        let reports = match self.settings.reports_with_experimental_followup(self.experimental_followup) {
             Ok(p) if !p.is_empty() => p,
             Ok(_) => {
                 self.message("Selecciona una opción de DPI, luces, botones o rueda.", true);
@@ -218,7 +220,7 @@ impl Configurator {
     }
 
     fn pending_count(&self) -> usize {
-        self.settings.reports().map(|r| r.len()).unwrap_or(0)
+        self.settings.reports_with_experimental_followup(self.experimental_followup).map(|r| r.len()).unwrap_or(0)
     }
 
     fn header(&mut self, ui: &mut egui::Ui) {
@@ -520,8 +522,13 @@ impl Configurator {
                 self.reset_consent();
             }
         });
+        if ui.checkbox(&mut self.experimental_followup,
+            "EXPERIMENTAL: enviar 07 20 al finalizar el lote (hipótesis Redgear A20, no confirmada para 1286)")
+            .changed() {
+            self.reset_consent();
+        }
         ui.heading("Vista previa de comandos");
-        match self.settings.reports() {
+        match self.settings.reports_with_experimental_followup(self.experimental_followup) {
             Ok(packets) if packets.is_empty() => {
                 ui.label("Sin cambios seleccionados para aplicar.");
             }

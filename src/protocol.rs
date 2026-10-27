@@ -140,11 +140,21 @@ impl Settings {
         }
         Ok(output)
     }
+
+    pub fn reports_with_experimental_followup(&self, enabled: bool) -> Result<Vec<Report>, String> {
+        let mut reports = self.reports()?;
+        if enabled && !reports.is_empty() {
+            reports.push(experimental_followup());
+        }
+        Ok(reports)
+    }
 }
 
 fn packet(kind: u8, x: u8, y: u8, z: u8) -> Report {
     [0x07, kind, x, y, z, 0, 0, 0]
 }
+/// Hypothesis from the Redgear A20 driver; unconfirmed for 18F8:1286.
+pub fn experimental_followup() -> Report { packet(0x20, 0, 0, 0) }
 pub fn rgb(light: Light) -> Report { packet(0x13, 0x7F, light.code(), 0) }
 pub fn wheel(mode: Wheel) -> Report { packet(0x11, mode.code(), 0, 0) }
 pub fn bind(physical: u8, action: Action) -> Result<Report, String> {
@@ -360,6 +370,18 @@ mod tests {
     #[test]
     fn rgb_off_vector() {
         assert_eq!(rgb(Light::Off), [7, 0x13, 0x7F, 0x17, 0, 0, 0, 0]);
+    }
+    #[test]
+    fn experimental_followup_is_opt_in_and_only_after_a_report() {
+        assert_eq!(experimental_followup(), [7, 0x20, 0, 0, 0, 0, 0, 0]);
+        let mut settings = Settings::default();
+        assert!(settings.reports_with_experimental_followup(true).unwrap().is_empty());
+        settings.apply_light = true;
+        settings.light = Light::Off;
+        assert_eq!(settings.reports_with_experimental_followup(false).unwrap(),
+            vec![[7, 0x13, 0x7F, 0x17, 0, 0, 0, 0]]);
+        assert_eq!(settings.reports_with_experimental_followup(true).unwrap(),
+            vec![[7, 0x13, 0x7F, 0x17, 0, 0, 0, 0], [7, 0x20, 0, 0, 0, 0, 0, 0]]);
     }
     #[test]
     fn dpi_vectors() {
