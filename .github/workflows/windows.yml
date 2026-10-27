@@ -93,6 +93,15 @@ jobs:
           printf '%s\n'             'CLON//CONTROL experimental, Rust 1.99.1, Windows x64.'             ''             'Binaries passed cargo test and cargo build on a Windows runner.'             'Not tested against real A704F hardware. Does not update firmware.'             'First run a704f-diag.exe (read-only); keep simulation enabled in the GUI.'             > release-notes.md
           EXTRA=()
           if [[ "$IS_PRERELEASE" == "true" ]]; then EXTRA+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" release/ClonControl-Windows-x64.zip release/SHA256SUMS.txt release/Cargo.lock \
+          # upload-artifact can preserve dist/ when archiving files from several roots.
+          ARCHIVE=$(find release -type f -name 'ClonControl-Windows-x64.zip' -print -quit)
+          SUMS=$(find release -type f -name 'SHA256SUMS.txt' -print -quit)
+          LOCK=$(find release -type f -name 'Cargo.lock' -print -quit)
+          if [[ ! -f "$ARCHIVE" || ! -f "$SUMS" || ! -f "$LOCK" ]]; then
+            echo "Missing release files; artifact contains:" >&2
+            find release -type f >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" "$ARCHIVE" "$SUMS" "$LOCK" \
             --target "$GITHUB_SHA" --title "CLON//CONTROL $RELEASE_TAG" \
             --notes-file release-notes.md "${EXTRA[@]}"
