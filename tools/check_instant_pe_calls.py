@@ -24,14 +24,14 @@ def parse_sections(buf):
     if buf[:2] != b"MZ":
         raise ValueError("No hay cabecera MZ")
     header = u32(buf, 0x3C)
-    if buf[header:header + 4] != b"PE\\0\\0" or u16(buf, header + 24) != 0x10B:
+    if buf[header:header + 4] != b"PE\0\0" or u16(buf, header + 24) != 0x10B:
         raise ValueError("Se requiere un PE32 x86")
     base = u32(buf, header + 24 + 28)
     section_table = header + 24 + u16(buf, header + 20)
     items = []
     for i in range(u16(buf, header + 6)):
         pos = section_table + 40 * i
-        name = buf[pos:pos + 8].split(b"\\0")[0].decode("ascii", errors="replace")
+        name = buf[pos:pos + 8].split(b"\0")[0].decode("ascii", errors="replace")
         size, rva, raw_size, raw_offset = struct.unpack_from("<IIII", buf, pos + 8)
         flags = u32(buf, pos + 36)
         items.append((name, base + rva, size, raw_offset, raw_size, flags))
