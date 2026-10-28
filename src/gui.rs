@@ -1,12 +1,99 @@
 use cloncontrol_a704f::{device, protocol};
-use eframe::egui::{self, Color32, RichText, Vec2};
+use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use protocol::{Action, Light, Settings, Wheel};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
-const ACCENT: Color32 = Color32::from_rgb(100, 224, 196);
-const SECONDARY: Color32 = Color32::from_rgb(165, 181, 191);
-const BACKGROUND: Color32 = Color32::from_rgb(17, 21, 29);
-const PANEL: Color32 = Color32::from_rgb(29, 35, 44);
+const ACCENT: Color32 = Color32::from_rgb(44, 166, 248);
+const SECONDARY: Color32 = Color32::from_rgb(180, 193, 204);
+const BACKGROUND: Color32 = Color32::from_rgb(15, 22, 32);
+const PANEL: Color32 = Color32::from_rgb(26, 36, 49);
+
+/// Icons are painted as geometric shapes. No fonts, emoji, private Unicode codepoints
+/// or downloaded assets are needed, so Windows fallback fonts cannot break them.
+#[derive(Clone, Copy)]
+enum Glyph { Dpi, Experiment, Diagnostic, Mouse, Lamp, Buttons, Wheel, Apply, Save, Search }
+
+fn paint_glyph(p: &egui::Painter, c: egui::Pos2, icon: Glyph, color: Color32) {
+    let line = Stroke::new(1.9, color);
+    let seg = |a: (f32, f32), b: (f32, f32)| {
+        p.line_segment([c + egui::vec2(a.0, a.1), c + egui::vec2(b.0, b.1)], line);
+    };
+    match icon {
+        Glyph::Dpi => {
+            p.circle_stroke(c, 7.0, line);
+            p.circle_filled(c, 2.1, color);
+            seg((-10.0, 0.0), (-4.0, 0.0));
+            seg((4.0, 0.0), (10.0, 0.0));
+            seg((0.0, -10.0), (0.0, -4.0));
+            seg((0.0, 4.0), (0.0, 10.0));
+        }
+        Glyph::Experiment => {
+            seg((-3.0, -9.0), (3.0, -9.0));
+            seg((-2.0, -9.0), (-2.0, -3.0));
+            seg((2.0, -9.0), (2.0, -3.0));
+            seg((-2.0, -3.0), (-7.0, 5.0));
+            seg((2.0, -3.0), (7.0, 5.0));
+            seg((-7.0, 5.0), (-6.0, 8.0));
+            seg((7.0, 5.0), (6.0, 8.0));
+            seg((-6.0, 8.0), (6.0, 8.0));
+            seg((-5.0, 3.0), (5.0, 3.0));
+        }
+        Glyph::Diagnostic => {
+            p.circle_stroke(c, 9.0, line);
+            p.circle_filled(c + egui::vec2(0.0, -4.8), 1.5, color);
+            seg((0.0, -1.0), (0.0, 5.2));
+        }
+        Glyph::Mouse | Glyph::Buttons => {
+            p.circle_stroke(c + egui::vec2(0.0, 1.0), 8.0, line);
+            seg((0.0, -6.5), (0.0, 0.0));
+            p.line_segment([c + egui::vec2(-8.0, 0.0), c + egui::vec2(8.0, 0.0)], line);
+            if matches!(icon, Glyph::Buttons) { p.circle_filled(c + egui::vec2(-3.5, -3.5), 1.8, color); }
+        }
+        Glyph::Lamp => {
+            p.circle_stroke(c + egui::vec2(0.0, -2.0), 5.0, line);
+            seg((-3.0, 4.0), (3.0, 4.0));
+            seg((-2.5, 7.0), (2.5, 7.0));
+            seg((-9.0, -2.0), (-7.0, -2.0));
+            seg((7.0, -2.0), (9.0, -2.0));
+            seg((0.0, -11.0), (0.0, -9.0));
+        }
+        Glyph::Wheel => {
+            p.circle_stroke(c, 8.0, line);
+            seg((0.0, -6.0), (0.0, 6.0));
+            seg((-3.0, -1.0), (3.0, -1.0));
+            seg((-3.0, 2.0), (3.0, 2.0));
+        }
+        Glyph::Apply => {
+            seg((-8.0, 0.0), (-2.0, 6.0));
+            seg((-2.0, 6.0), (8.0, -6.0));
+        }
+        Glyph::Save => {
+            seg((-7.0, -8.0), (6.0, -8.0));
+            seg((6.0, -8.0), (8.0, -5.0));
+            seg((8.0, -5.0), (8.0, 8.0));
+            seg((8.0, 8.0), (-8.0, 8.0));
+            seg((-8.0, 8.0), (-8.0, -8.0));
+            seg((-5.0, -7.0), (-5.0, -1.0));
+            seg((-5.0, -1.0), (4.0, -1.0));
+            p.circle_stroke(c + egui::vec2(0.0, 4.0), 2.0, line);
+        }
+        Glyph::Search => {
+            p.circle_stroke(c + egui::vec2(-2.0, -2.0), 5.5, line);
+            seg((2.0, 2.0), (9.0, 9.0));
+        }
+    }
+}
+
+/// Places an icon inside a clickable button; the whole button remains one hit target.
+fn icon_button(ui: &mut egui::Ui, label: &str, glyph: Glyph, size: Vec2, active: bool) -> egui::Response {
+    let response = ui.add_sized([size.x, size.y],
+        egui::Button::new(format!("      {label}")).selected(active));
+    let center = response.rect.left_center() + egui::vec2(19.0, 0.0);
+    let color = if response.enabled() { ACCENT } else { SECONDARY };
+    paint_glyph(ui.painter(), center, glyph, color);
+    response
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Page {
@@ -53,8 +140,8 @@ impl Configurator {
         theme.panel_fill = BACKGROUND;
         theme.window_fill = BACKGROUND;
         theme.extreme_bg_color = Color32::from_rgb(12, 15, 20);
-        theme.selection.bg_fill = Color32::from_rgb(40, 105, 94);
-        theme.widgets.active.bg_fill = Color32::from_rgb(39, 117, 99);
+        theme.selection.bg_fill = Color32::from_rgb(19, 76, 126);
+        theme.widgets.active.bg_fill = Color32::from_rgb(26, 90, 147);
         cc.egui_ctx.set_visuals(theme);
         let (settings, warning) = match fs::read_to_string(config_path()) {
             Ok(json) => match serde_json::from_str::<Settings>(&json) {
@@ -134,7 +221,7 @@ impl Configurator {
             .map(|(i, bytes)| format!("  {:02}: {}", i + 1, protocol::hex(bytes)))
             .collect::<Vec<_>>().join("\n");
         let report = format!(
-            "CLON//CONTROL 0.2.4 — último intento REAL de escritura HID\n\
+            "CLON//CONTROL — último intento REAL de escritura HID\n\
              Hora Unix (UTC): {epoch}\n\
              VID:PID 18F8:1286\n\
              Colección seleccionada: MI 1 / FF01:0001 / Feature 07 (8 bytes)\n\
@@ -204,9 +291,12 @@ impl Configurator {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.heading(RichText::new("CLON//CONTROL").size(22.0).color(ACCENT));
+            let (icon_rect, _) = ui.allocate_exact_size(Vec2::new(27.0, 27.0), egui::Sense::hover());
+            paint_glyph(ui.painter(), icon_rect.center(), Glyph::Mouse, ACCENT);
+            ui.heading(RichText::new("CLON").size(22.0).strong());
+            ui.heading(RichText::new("//CONTROL").size(22.0).color(ACCENT).strong());
             ui.separator();
-            ui.label(RichText::new("A704F  /  WINDOWS").color(SECONDARY));
+            ui.label(RichText::new("EL CLON RESPONDE.").color(SECONDARY).small());
             ui.separator();
             let connected = self.devices.iter().any(|d| d.eligible);
             ui.colored_label(
@@ -214,7 +304,7 @@ impl Configurator {
                 if connected { "Mouse conectado" } else { "Mouse no detectado" },
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Buscar mouse").clicked() { self.rescan(); }
+                if icon_button(ui, "Buscar mouse", Glyph::Search, Vec2::new(143.0, 30.0), false).clicked() { self.rescan(); }
             });
         });
         ui.add_space(8.0);
@@ -222,25 +312,29 @@ impl Configurator {
 
     fn nav(&mut self, ui: &mut egui::Ui) {
         ui.add_space(20.0);
-        ui.heading("TU MOUSE");
+        ui.label(RichText::new("TU MOUSE").strong().color(ACCENT));
         ui.label(RichText::new("INSTANT / A704F").color(SECONDARY).small());
         ui.label(RichText::new("18F8 : 1286").monospace().color(ACCENT));
         ui.add_space(18.0);
         ui.separator();
         ui.add_space(10.0);
         for page in Page::ALL {
-            if ui.add_sized(
-                [170.0, 44.0],
-                egui::Button::new(page.title()).selected(self.page == page),
-            ).clicked() {
+            let icon = match page {
+                Page::Dpi => Glyph::Dpi,
+                Page::Experimental => Glyph::Experiment,
+                Page::Diagnostics => Glyph::Diagnostic,
+            };
+            if icon_button(ui, page.title(), icon, Vec2::new(180.0, 48.0), self.page == page).clicked() {
                 self.page = page;
                 self.reset_consent();
             }
+            ui.add_space(3.0);
         }
         ui.add_space(20.0);
         ui.separator();
-        ui.label(RichText::new("DPI: probado en este mouse").color(ACCENT).small());
-        ui.label(RichText::new("Otros controles: experimentales").color(SECONDARY).small());
+        ui.label(RichText::new("DPI  /  PROBADO").color(ACCENT).small().strong());
+        ui.label(RichText::new("Luces, botones y rueda").color(SECONDARY).small());
+        ui.label(RichText::new("todavía experimentales").color(SECONDARY).small());
         ui.add_space(12.0);
         ui.label(RichText::new("CLON//CONTROL").color(SECONDARY).small());
     }
@@ -252,7 +346,7 @@ impl Configurator {
     }
 
     fn dpi(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Tu sensibilidad", "Cambia el DPI sin simulaciones ni pasos innecesarios.");
+        Self::title(ui, "DPI bajo control", "Cuatro perfiles. Un botón. Nada de rituales.");
         let current = self.settings.active.min(3);
         ui.group(|ui| {
             ui.horizontal(|ui| {
@@ -300,12 +394,12 @@ impl Configurator {
         }
         ui.add_space(12.0);
         let eligible = self.devices.get(self.selected).is_some_and(|d| d.eligible);
-        if ui.add_enabled(eligible,
-            egui::Button::new(RichText::new("Aplicar DPI al mouse").size(17.0).strong())
-                .min_size(Vec2::new(240.0, 48.0))
-        ).clicked() {
-            self.apply_dpi();
-        }
+        let response = ui.add_enabled(eligible,
+            egui::Button::new(RichText::new("      Aplicar DPI al mouse").size(17.0).strong())
+                .min_size(Vec2::new(274.0, 51.0)));
+        paint_glyph(ui.painter(), response.rect.left_center() + egui::vec2(20.0, 0.0),
+            Glyph::Apply, if eligible { ACCENT } else { SECONDARY });
+        if response.clicked() { self.apply_dpi(); }
         ui.label(RichText::new(
             "El botón envía solo los cuatro reportes DPI. No modifica luces, botones ni rueda."
         ).color(SECONDARY).small());
@@ -322,9 +416,12 @@ impl Configurator {
             "Estos controles están separados del DPI. No se enviará ninguno al aplicar sensibilidad."
         ).color(SECONDARY));
         ui.add_space(12.0);
-        ui.collapsing("Iluminación (sin verificar)", |ui| self.lighting(ui));
-        ui.collapsing("Botones laterales (sin verificar)", |ui| self.buttons(ui));
-        ui.collapsing("Rueda (sin verificar)", |ui| self.wheel(ui));
+        let rgb = ui.collapsing("       Iluminación · no comprobada", |ui| self.lighting(ui));
+        paint_glyph(ui.painter(), rgb.header_response.rect.left_center() + egui::vec2(24.0, 0.0), Glyph::Lamp, SECONDARY);
+        let buttons = ui.collapsing("       Botones laterales · no comprobados", |ui| self.buttons(ui));
+        paint_glyph(ui.painter(), buttons.header_response.rect.left_center() + egui::vec2(24.0, 0.0), Glyph::Buttons, SECONDARY);
+        let wheel = ui.collapsing("       Rueda · no comprobada", |ui| self.wheel(ui));
+        paint_glyph(ui.painter(), wheel.header_response.rect.left_center() + egui::vec2(24.0, 0.0), Glyph::Wheel, SECONDARY);
         ui.add_space(16.0);
         let has_changes = self.settings.apply_light || self.settings.apply_buttons || self.settings.apply_wheel;
         if has_changes {
@@ -356,7 +453,8 @@ impl Configurator {
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Asignaciones", "Dos botones laterales con funciones claras.");
+        ui.heading("Asignaciones laterales");
+        ui.label(RichText::new("Solo los dos botones laterales; sin alterar los clics principales.").color(SECONDARY));
         ui.group(|ui| {
             ui.heading("Boton delantero");
             ui.label(RichText::new("Identificador físico 05").color(SECONDARY));
@@ -388,11 +486,12 @@ impl Configurator {
         });
         ui.add_space(12.0);
         if ui.checkbox(&mut self.settings.apply_buttons, "Preparar botones").changed() { self.reset_consent(); }
-        ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aqui.").color(SECONDARY));
+        ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aquí.").color(SECONDARY));
     }
 
     fn wheel(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Rueda", "Una sola decision, dos comportamientos.");
+        ui.heading("Rueda");
+        ui.label(RichText::new("Desplazamiento normal o volumen. Aún sin prueba física.").color(SECONDARY));
         ui.group(|ui| {
             for mode in Wheel::ALL {
                 if ui.radio_value(&mut self.settings.wheel, mode, mode.label()).changed() {
@@ -472,7 +571,7 @@ impl Configurator {
             ui.label("Todavía no hay ninguna escritura real registrada en este equipo.");
         }
         ui.add_space(15.0);
-        ui.label(RichText::new("La compatibilidad física aún debe comprobarse. No se envían comandos sin consentimiento.").color(SECONDARY));
+        ui.label(RichText::new("El DPI ha sido observado funcionando en esta unidad. Los demás efectos no están confirmados.").color(SECONDARY));
     }
 
     fn action_bar(&mut self, ui: &mut egui::Ui) {
@@ -480,7 +579,7 @@ impl Configurator {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Los cambios solo se envían al pulsar Aplicar.").color(SECONDARY).small());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Guardar perfiles").clicked() { self.save(); }
+                if icon_button(ui, "Guardar perfiles", Glyph::Save, Vec2::new(160.0, 31.0), false).clicked() { self.save(); }
             });
         });
         ui.colored_label(if self.error { Color32::LIGHT_RED } else { ACCENT }, &self.status);
