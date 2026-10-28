@@ -1,5 +1,5 @@
 use cloncontrol_a704f::{device, protocol};
-use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
+use eframe::egui::{self, Color32, RichText, Vec2};
 use protocol::{Action, Light, Settings, Wheel};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
