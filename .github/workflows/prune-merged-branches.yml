@@ -1,0 +1,66 @@
+name: Prune merged topic branches
+
+# Only after main actually changes (including a squash merge), or an explicit run.
+# Run with content write permission and never delete an unmerged or changed head.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Delete safe merged branches (unchecked = report only)"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate merged branches (lease-safe)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const apply = context.eventName === 'push' ||
+              (context.eventName === 'workflow_dispatch' && context.payload.inputs?.apply === 'true');
+            const [branches, prs] = await Promise.all([
+              github.paginate(github.rest.repos.listBranches, { owner, repo, per_page: 100 }),
+              github.paginate(github.rest.pulls.list, { owner, repo, state: 'all', per_page: 100 })
+            ]);
+            const current = new Map(branches.map(b => [b.name, b]));
+            const pending = new Set(prs.filter(p => p.state === 'open' && p.head.repo?.full_name === `${owner}/${repo}`)
+              .map(p => p.head.ref));
+            const candidates = new Map();
+            for (const pr of prs) {
+              if (!pr.merged_at || pr.base.ref !== 'main') continue;
+              if (pr.head.repo?.full_name !== `${owner}/${repo}`) continue;
+              const name = pr.head.ref;
+              const b = current.get(name);
+              if (!b || b.protected || name === 'main' || pending.has(name)) continue;
+              if (!name.startsWith('feature/') && !name.startsWith('fix/') &&
+                  !name.startsWith('research/') && !name.startsWith('chore/')) continue;
+              // Preserve any branch whose tip changed since it was merged.
+              if (b.commit.sha !== pr.head.sha) continue;
+              candidates.set(name, pr.head.sha);
+            }
+            for (const [name, expectedSha] of [...candidates].sort((a, b) => a[0].localeCompare(b[0]))) {
+              const ref = `heads/${name}`;
+              // Re-read immediately before deletion, to guard against a race after listing.
+              const latest = await github.rest.git.getRef({ owner, repo, ref });
+              if (latest.data.object.sha !== expectedSha) {
+                core.warning(`SKIP ${name}: head changed during cleanup`);
+                continue;
+              }
+              if (!apply) {
+                core.info(`DRY-RUN: would delete ${name} at ${expectedSha}`);
+                continue;
+              }
+              await github.rest.git.deleteRef({ owner, repo, ref });
+              core.info(`Deleted merged branch ${name} (${expectedSha})`);
+            }
+            core.info(`Matched ${candidates.size} safe merged branches; apply=${apply}`);

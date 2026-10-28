@@ -76,6 +76,10 @@ cargo build --release --bins
 
 GitHub Actions ejecuta las pruebas en Windows MSVC y adjunta ZIPs portables para las PR; la rama `main` publica compilaciones *prerelease* experimentales. Un CI verde no sustituye la prueba física del propietario.
 
+## Organización del repositorio
+
+El historial publicado de `main` se conserva intacto: los cambios nuevos se integran mediante **squash merge** y se resumen en [CHANGELOG.md](CHANGELOG.md). La automatización [Prune merged topic branches](.github/workflows/prune-merged-branches.yml) limpia, después de nuevas integraciones, únicamente ramas `feature/`, `fix/`, `research/` y `chore/` pertenecientes a PR fusionadas cuyo HEAD no haya cambiado; protege `main`, ramas con PR abiertas y trabajo nuevo. Puede ejecutarse manualmente en modo de vista previa.
+
 ## Contribuir y alcance
 
 Se agradecen reportes de hardware con **VID/PID, colección HID, comando enviado y resultado físico** (sin compartir seriales, rutas USB ni capturas de teclas). Prioridades: DPI fiable, interfaz clara y diagnósticos reproducibles. No introducir comandos especulativos ni afirmar compatibilidad sin prueba de hardware.
