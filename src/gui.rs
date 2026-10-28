@@ -11,7 +11,7 @@ const PANEL: Color32 = Color32::from_rgb(26, 36, 49);
 /// Icons are painted as geometric shapes. No fonts, emoji, private Unicode codepoints
 /// or downloaded assets are needed, so Windows fallback fonts cannot break them.
 #[derive(Clone, Copy)]
-enum Glyph { Dpi, Experiment, Diagnostic, Mouse, Lamp, Buttons, Wheel, Apply, Save, Search }
+enum Glyph { Dpi, Experiment, Diagnostic, Brand, Lamp, Buttons, Wheel, Apply, Save, Search }
 
 fn paint_glyph(p: &egui::Painter, c: egui::Pos2, icon: Glyph, color: Color32) {
     let line = Stroke::new(1.9, color);
@@ -43,11 +43,16 @@ fn paint_glyph(p: &egui::Painter, c: egui::Pos2, icon: Glyph, color: Color32) {
             p.circle_filled(c + egui::vec2(0.0, -4.8), 1.5, color);
             seg((0.0, -1.0), (0.0, 5.2));
         }
-        Glyph::Mouse | Glyph::Buttons => {
+        Glyph::Brand | Glyph::Buttons => {
             p.circle_stroke(c + egui::vec2(0.0, 1.0), 8.0, line);
             seg((0.0, -6.5), (0.0, 0.0));
             p.line_segment([c + egui::vec2(-8.0, 0.0), c + egui::vec2(8.0, 0.0)], line);
             if matches!(icon, Glyph::Buttons) { p.circle_filled(c + egui::vec2(-3.5, -3.5), 1.8, color); }
+            else {
+                let blue = Color32::from_rgb(38, 184, 252);
+                p.line_segment([c + egui::vec2(-8.5, 8.0), c + egui::vec2(8.0, -6.0)], Stroke::new(3.3, blue));
+                p.line_segment([c + egui::vec2(-0.5, 8.0), c + egui::vec2(8.5, 0.0)], Stroke::new(3.0, blue));
+            }
         }
         Glyph::Lamp => {
             p.circle_stroke(c + egui::vec2(0.0, -2.0), 5.0, line);
@@ -292,7 +297,7 @@ impl Configurator {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             let (icon_rect, _) = ui.allocate_exact_size(Vec2::new(27.0, 27.0), egui::Sense::hover());
-            paint_glyph(ui.painter(), icon_rect.center(), Glyph::Mouse, ACCENT);
+            paint_glyph(ui.painter(), icon_rect.center(), Glyph::Brand, ACCENT);
             ui.heading(RichText::new("CLON").size(22.0).strong());
             ui.heading(RichText::new("//CONTROL").size(22.0).color(ACCENT).strong());
             ui.separator();

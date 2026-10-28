@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand-mark.svg" alt="CLON//CONTROL: mouse dividido por dos trazos azules" width="144" height="144">
+</p>
+
 # CLON//CONTROL
 
 **El clon responde.** Un configurador liviano para un mouse que se parece a un Razer, pero no lo es.
