@@ -2,14 +2,14 @@
 
 Este archivo resume los cambios importantes **sin reescribir el historial Git publicado**. Los SHA y PR originales siguen siendo consultables.
 
-## Pendiente de integrar — «El clon responde»
+## v0.3.0 — «El clon responde» (interfaz DPI primero)
 
 - **DPI primero:** cuatro perfiles directamente accesibles y un único botón de aplicación, sin ritual de simulaciones.
 - DPI aislado por pruebas unitarias de RGB, botones y rueda.
 - Sección de otras funciones separada y etiquetada como experimental.
 - Nuevo sistema de iconos vectoriales de egui que no depende de glifos Unicode; logotipo coherente para ventana y ejecutable Windows.
 - README centrado en lo comprobado en el hardware, no en el trabajo forense.
-- Fuente: [PR #10](https://github.com/vanTheodore/Razer_Config/pull/10).
+- Implementación: [PR #10](https://github.com/vanTheodore/Razer_Config/pull/10).
 
 ## 2026-10-27 — primera función física comprobada
 
