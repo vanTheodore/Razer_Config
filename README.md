@@ -12,6 +12,18 @@ Las etiquetas Git que empiecen con `v` (por ejemplo `v0.2.0`) publicarán un rel
 
 Los runners públicos estándar de GitHub Actions no consumen tus minutos privados; solo necesitas descargar los binarios al terminar.
 
+## Interfaz «DPI primero» — rediseño en desarrollo
+
+**DPI validado físicamente por el propietario:** el perfil seleccionado a 200 CPI nominales produjo una reducción observable de sensibilidad en su mouse `18F8:1286`. **No se ha medido el CPI exacto**.
+
+- La aplicación abre directamente en **Sensibilidad DPI** y aplica **solo** sus cuatro reportes `07 09` con el botón **Aplicar DPI al mouse**. Ya no exige simular, desactivar simulación y marcar una segunda casilla: pulsar Aplicar es la autorización explícita. No se escribe al mover sliders, seleccionar perfiles ni guardar la configuración local.
+- **Iluminación, botones y rueda** se agrupan bajo «Otras funciones», etiquetadas como *sin verificar*. Solo se transmiten si se preparan y el usuario confirma la advertencia experimental. El DPI queda excluido de esos envíos.
+- **Diagnóstico USB** mantiene vista previa de paquetes y registro de intentos reales; ningún cambio de protocolo, firmware o interfaz HID.
+- Nuevo icono vectorial del mouse dibujado en RGBA y asignado al **viewport de Windows** para sustituir el icono genérico de egui. La navegación elimina flechas y glifos no garantizados por la fuente. Esto **no** incorpora todavía un recurso `.ico` al ejecutable de Windows Explorer.
+- Pruebas añadidas para que DPI y funciones experimentales **no puedan mezclarse** por error.
+
+Esta interfaz se desarrolla en una PR separada desde `main`. La PR #8, de diagnóstico y opciones experimentales, permanece independiente; sus cambios deberán integrarse cuidadosamente si se fusionan ambas PR.
+
 ## CLON//CONTROL 0.2.6 — reconstrucción del ejecutable y lectura opcional
 
 **Resuelto el misterio de las llamadas imposibles.** Inno Setup 5.5.7 aplica el filtro de compresión `CallInstructionOptimized` (variante 5309), que transforma los desplazamientos de `CALL`/`JMP` para favorecer la compresión. Nuestra extracción inicial había omitido el **paso de restauración del filtro**. Al aplicarlo al PE **completo, incluida su firma**, se restauraron 49.513 operandos y el hash Authenticode coincidió exactamente con el digest almacenado en el certificado. Las llamadas observadas se dirigen efectivamente a `HidD_GetFeature` y `HidD_SetFeature`. [Ver demostración reproducible](docs/INSTANT_CALL_TARGET_AUDIT.md).
