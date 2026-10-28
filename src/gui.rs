@@ -3,43 +3,116 @@ use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use protocol::{Action, Light, Settings, Wheel};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
-const ACCENT: Color32 = Color32::from_rgb(100, 224, 196);
-const SECONDARY: Color32 = Color32::from_rgb(165, 181, 191);
-const BACKGROUND: Color32 = Color32::from_rgb(17, 21, 29);
-const PANEL: Color32 = Color32::from_rgb(29, 35, 44);
+const ACCENT: Color32 = Color32::from_rgb(44, 166, 248);
+const SECONDARY: Color32 = Color32::from_rgb(180, 193, 204);
+const BACKGROUND: Color32 = Color32::from_rgb(15, 22, 32);
+const PANEL: Color32 = Color32::from_rgb(26, 36, 49);
+
+/// Icons are painted as geometric shapes. No fonts, emoji, private Unicode codepoints
+/// or downloaded assets are needed, so Windows fallback fonts cannot break them.
+#[derive(Clone, Copy)]
+enum Glyph { Dpi, Experiment, Diagnostic, Brand, Lamp, Buttons, Wheel, Apply, Save, Search }
+
+fn paint_glyph(p: &egui::Painter, c: egui::Pos2, icon: Glyph, color: Color32) {
+    let line = Stroke::new(1.9, color);
+    let seg = |a: (f32, f32), b: (f32, f32)| {
+        p.line_segment([c + egui::vec2(a.0, a.1), c + egui::vec2(b.0, b.1)], line);
+    };
+    match icon {
+        Glyph::Dpi => {
+            p.circle_stroke(c, 7.0, line);
+            p.circle_filled(c, 2.1, color);
+            seg((-10.0, 0.0), (-4.0, 0.0));
+            seg((4.0, 0.0), (10.0, 0.0));
+            seg((0.0, -10.0), (0.0, -4.0));
+            seg((0.0, 4.0), (0.0, 10.0));
+        }
+        Glyph::Experiment => {
+            seg((-3.0, -9.0), (3.0, -9.0));
+            seg((-2.0, -9.0), (-2.0, -3.0));
+            seg((2.0, -9.0), (2.0, -3.0));
+            seg((-2.0, -3.0), (-7.0, 5.0));
+            seg((2.0, -3.0), (7.0, 5.0));
+            seg((-7.0, 5.0), (-6.0, 8.0));
+            seg((7.0, 5.0), (6.0, 8.0));
+            seg((-6.0, 8.0), (6.0, 8.0));
+            seg((-5.0, 3.0), (5.0, 3.0));
+        }
+        Glyph::Diagnostic => {
+            p.circle_stroke(c, 9.0, line);
+            p.circle_filled(c + egui::vec2(0.0, -4.8), 1.5, color);
+            seg((0.0, -1.0), (0.0, 5.2));
+        }
+        Glyph::Brand | Glyph::Buttons => {
+            p.circle_stroke(c + egui::vec2(0.0, 1.0), 8.0, line);
+            seg((0.0, -6.5), (0.0, 0.0));
+            p.line_segment([c + egui::vec2(-8.0, 0.0), c + egui::vec2(8.0, 0.0)], line);
+            if matches!(icon, Glyph::Buttons) { p.circle_filled(c + egui::vec2(-3.5, -3.5), 1.8, color); }
+            else {
+                let blue = Color32::from_rgb(38, 184, 252);
+                p.line_segment([c + egui::vec2(-8.5, 8.0), c + egui::vec2(8.0, -6.0)], Stroke::new(3.3, blue));
+                p.line_segment([c + egui::vec2(-0.5, 8.0), c + egui::vec2(8.5, 0.0)], Stroke::new(3.0, blue));
+            }
+        }
+        Glyph::Lamp => {
+            p.circle_stroke(c + egui::vec2(0.0, -2.0), 5.0, line);
+            seg((-3.0, 4.0), (3.0, 4.0));
+            seg((-2.5, 7.0), (2.5, 7.0));
+            seg((-9.0, -2.0), (-7.0, -2.0));
+            seg((7.0, -2.0), (9.0, -2.0));
+            seg((0.0, -11.0), (0.0, -9.0));
+        }
+        Glyph::Wheel => {
+            p.circle_stroke(c, 8.0, line);
+            seg((0.0, -6.0), (0.0, 6.0));
+            seg((-3.0, -1.0), (3.0, -1.0));
+            seg((-3.0, 2.0), (3.0, 2.0));
+        }
+        Glyph::Apply => {
+            seg((-8.0, 0.0), (-2.0, 6.0));
+            seg((-2.0, 6.0), (8.0, -6.0));
+        }
+        Glyph::Save => {
+            seg((-7.0, -8.0), (6.0, -8.0));
+            seg((6.0, -8.0), (8.0, -5.0));
+            seg((8.0, -5.0), (8.0, 8.0));
+            seg((8.0, 8.0), (-8.0, 8.0));
+            seg((-8.0, 8.0), (-8.0, -8.0));
+            seg((-5.0, -7.0), (-5.0, -1.0));
+            seg((-5.0, -1.0), (4.0, -1.0));
+            p.circle_stroke(c + egui::vec2(0.0, 4.0), 2.0, line);
+        }
+        Glyph::Search => {
+            p.circle_stroke(c + egui::vec2(-2.0, -2.0), 5.5, line);
+            seg((2.0, 2.0), (9.0, 9.0));
+        }
+    }
+}
+
+/// Places an icon inside a clickable button; the whole button remains one hit target.
+fn icon_button(ui: &mut egui::Ui, label: &str, glyph: Glyph, size: Vec2, active: bool) -> egui::Response {
+    let response = ui.add_sized([size.x, size.y],
+        egui::Button::new(format!("      {label}")).selected(active));
+    let center = response.rect.left_center() + egui::vec2(19.0, 0.0);
+    let color = if response.enabled() { ACCENT } else { SECONDARY };
+    paint_glyph(ui.painter(), center, glyph, color);
+    response
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Page {
-    Device,
     Dpi,
-    Lights,
-    Buttons,
-    Wheel,
+    Experimental,
     Diagnostics,
 }
 impl Page {
-    const ALL: [Self; 6] = [
-        Self::Device, Self::Dpi, Self::Lights,
-        Self::Buttons, Self::Wheel, Self::Diagnostics,
-    ];
+    const ALL: [Self; 3] = [Self::Dpi, Self::Experimental, Self::Diagnostics];
     fn title(self) -> &'static str {
         match self {
-            Self::Device => "Inicio",
-            Self::Dpi => "Sensibilidad",
-            Self::Lights => "Iluminación",
-            Self::Buttons => "Botones",
-            Self::Wheel => "Rueda",
+            Self::Dpi => "Sensibilidad DPI",
+            Self::Experimental => "Otras funciones",
             Self::Diagnostics => "Diagnóstico",
-        }
-    }
-    fn short(self) -> &'static str {
-        match self {
-            Self::Device => "Un dispositivo. Todo bajo control.",
-            Self::Dpi => "Cuatro velocidades, sin complicaciones.",
-            Self::Lights => "Personaliza la luz del mouse.",
-            Self::Buttons => "Asigna funciones a los botones laterales.",
-            Self::Wheel => "Elige como se comporta la rueda.",
-            Self::Diagnostics => "Identidad USB y comandos preparados.",
         }
     }
 }
@@ -49,7 +122,6 @@ pub struct Configurator {
     devices: Vec<device::Candidate>,
     selected: usize,
     page: Page,
-    dry_run: bool,
     armed: bool,
     status: String,
     error: bool,
@@ -73,8 +145,8 @@ impl Configurator {
         theme.panel_fill = BACKGROUND;
         theme.window_fill = BACKGROUND;
         theme.extreme_bg_color = Color32::from_rgb(12, 15, 20);
-        theme.selection.bg_fill = Color32::from_rgb(40, 105, 94);
-        theme.widgets.active.bg_fill = Color32::from_rgb(39, 117, 99);
+        theme.selection.bg_fill = Color32::from_rgb(19, 76, 126);
+        theme.widgets.active.bg_fill = Color32::from_rgb(26, 90, 147);
         cc.egui_ctx.set_visuals(theme);
         let (settings, warning) = match fs::read_to_string(config_path()) {
             Ok(json) => match serde_json::from_str::<Settings>(&json) {
@@ -88,10 +160,9 @@ impl Configurator {
             settings,
             devices: Vec::new(),
             selected: 0,
-            page: Page::Device,
-            dry_run: true,
+            page: Page::Dpi,
             armed: false,
-            status: warning.unwrap_or_else(|| "Listo para simular. No se ha escrito en el mouse.".into()),
+            status: warning.unwrap_or_else(|| "DPI listo. Aplica los cambios cuando quieras.".into()),
             error: false,
             last_hid_attempt: fs::read_to_string(trace_path()).ok(),
         };
@@ -105,7 +176,6 @@ impl Configurator {
     }
 
     fn reset_consent(&mut self) {
-        self.dry_run = true;
         self.armed = false;
     }
 
@@ -116,7 +186,7 @@ impl Configurator {
                 self.devices = found;
                 self.selected = self.devices.iter().position(|d| d.eligible).unwrap_or(0);
                 self.message(
-                    format!("{} colecciones HID encontradas. Canal de configuración: {}. Simulación activa.", self.devices.len(), if self.devices.iter().any(|d| d.eligible) { "validado" } else { "no validado" }),
+                    format!("Mouse: {}. {} colecciones USB encontradas.", if self.devices.iter().any(|d| d.eligible) { "listo para DPI" } else { "sin canal compatible" }, self.devices.len()),
                     false,
                 );
             }
@@ -156,14 +226,14 @@ impl Configurator {
             .map(|(i, bytes)| format!("  {:02}: {}", i + 1, protocol::hex(bytes)))
             .collect::<Vec<_>>().join("\n");
         let report = format!(
-            "CLON//CONTROL 0.2.4 — último intento REAL de escritura HID\n\
+            "CLON//CONTROL — último intento REAL de escritura HID\n\
              Hora Unix (UTC): {epoch}\n\
              VID:PID 18F8:1286\n\
              Colección seleccionada: MI 1 / FF01:0001 / Feature 07 (8 bytes)\n\
              Comandos previstos (hex):\n{commands}\n\
              Resultado de Windows: {state}\n\
              Detalle: {details}\n\
-             Efecto físico: DESCONOCIDO; observar manualmente la luz\n\
+             Efecto físico: comprobar manualmente en el dispositivo\n\
              Nota: este registro no contiene rutas USB ni números de serie.\n"
         );
         self.last_hid_attempt = Some(report.clone());
@@ -174,11 +244,13 @@ impl Configurator {
         Ok(path)
     }
 
-    fn apply(&mut self) {
-        let reports = match self.settings.reports() {
+    /// The explicit Apply button is the user's authorization for this operation.
+    /// Changing a slider or saving the preset never writes to the device.
+    fn send_reports(&mut self, reports: Result<Vec<protocol::Report>, String>, label: &str) {
+        let reports = match reports {
             Ok(p) if !p.is_empty() => p,
             Ok(_) => {
-                self.message("Selecciona una opción de DPI, luces, botones o rueda.", true);
+                self.message("No hay cambios de esa categoría seleccionados.", true);
                 return;
             }
             Err(e) => {
@@ -186,82 +258,90 @@ impl Configurator {
                 return;
             }
         };
-        if self.dry_run {
-            self.message(
-                format!("Simulación correcta: {} reportes, ningún cambio enviado al mouse.", reports.len()),
-                false,
-            );
-            return;
-        }
-        if !self.armed {
-            self.message("Marca la autorización antes de escribir en el HID.", true);
-            return;
-        }
         let target = self.devices.get(self.selected).filter(|d| d.eligible).map(|d| d.path.clone());
         let result = match target {
             Some(path) => device::apply(&path, &reports),
-            None => Err("No hay una interfaz USB del mouse válida para escribir.".into()),
+            None => Err("No hay un canal HID de configuración válido. Pulsa Buscar mouse.".into()),
         };
         let record = self.record_hid_result(&reports, &result);
         self.reset_consent();
         let report_note = match record {
-            Ok(path) => format!("Registro guardado: {}.", path.display()),
-            Err(e) => format!("ATENCIÓN: {e}."),
+            Ok(_) => String::new(),
+            Err(e) => format!(" No se pudo guardar el registro: {e}."),
         };
         match result {
             Ok(msg) => self.message(
-                format!("Solicitud HID aceptada por Windows, pero no sabemos si cambió la luz. {msg} {report_note} Simulación reactivada."),
+                format!("{label}: Windows aceptó la solicitud. Comprueba el efecto en el mouse; no se mide el CPI real. {msg}{report_note}"),
                 false
             ),
-            Err(e) => self.message(format!("Windows/HIDAPI informó un error: {e}. {report_note} Simulación reactivada."), true),
+            Err(e) => self.message(format!("{label}: no se pudo aplicar. {e}.{report_note}"), true),
         }
     }
 
-    fn pending_count(&self) -> usize {
-        self.settings.reports().map(|r| r.len()).unwrap_or(0)
+    fn apply_dpi(&mut self) {
+        // Nothing selected under 'Other functions' can leak into a DPI write.
+        self.send_reports(self.settings.dpi_reports(), "DPI");
+    }
+
+    fn apply_experimental(&mut self) {
+        if !self.armed {
+            self.message("Confirma que entiendes que estas funciones no están verificadas.", true);
+            return;
+        }
+        self.armed = false;
+        // Never include DPI in an experimental operation.
+        self.send_reports(self.settings.experimental_reports(), "Función experimental");
     }
 
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.heading(RichText::new("CLON//CONTROL").size(22.0).color(ACCENT));
+            let (icon_rect, _) = ui.allocate_exact_size(Vec2::new(27.0, 27.0), egui::Sense::hover());
+            paint_glyph(ui.painter(), icon_rect.center(), Glyph::Brand, ACCENT);
+            ui.heading(RichText::new("CLON").size(22.0).strong());
+            ui.heading(RichText::new("//CONTROL").size(22.0).color(ACCENT).strong());
             ui.separator();
-            ui.label(RichText::new("A704F  /  WINDOWS").color(SECONDARY));
+            ui.label(RichText::new("EL CLON RESPONDE.").color(SECONDARY).small());
             ui.separator();
             let connected = self.devices.iter().any(|d| d.eligible);
             ui.colored_label(
                 if connected { ACCENT } else { Color32::YELLOW },
-                if connected { "● Configuración HID 07 encontrada" } else { "● Sin canal HID validado" },
+                if connected { "Mouse conectado" } else { "Mouse no detectado" },
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("↻ Buscar mouse").clicked() { self.rescan(); }
+                if icon_button(ui, "Buscar mouse", Glyph::Search, Vec2::new(143.0, 30.0), false).clicked() { self.rescan(); }
             });
         });
         ui.add_space(8.0);
     }
 
     fn nav(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(18.0);
-        ui.label(RichText::new("DISPOSITIVO").small().color(SECONDARY));
-        ui.add_space(8.0);
-        ui.strong("Mouse gaming USB");
+        ui.add_space(20.0);
+        ui.label(RichText::new("TU MOUSE").strong().color(ACCENT));
+        ui.label(RichText::new("INSTANT / A704F").color(SECONDARY).small());
         ui.label(RichText::new("18F8 : 1286").monospace().color(ACCENT));
         ui.add_space(18.0);
         ui.separator();
-        ui.label(RichText::new("CONFIGURACIÓN").small().color(SECONDARY));
-        ui.add_space(8.0);
+        ui.add_space(10.0);
         for page in Page::ALL {
-            if ui.add_sized(
-                [176.0, 38.0],
-                egui::Button::new(page.title()).selected(self.page == page),
-            ).clicked() {
+            let icon = match page {
+                Page::Dpi => Glyph::Dpi,
+                Page::Experimental => Glyph::Experiment,
+                Page::Diagnostics => Glyph::Diagnostic,
+            };
+            if icon_button(ui, page.title(), icon, Vec2::new(180.0, 48.0), self.page == page).clicked() {
                 self.page = page;
+                self.reset_consent();
             }
+            ui.add_space(3.0);
         }
         ui.add_space(20.0);
         ui.separator();
-        ui.label(RichText::new("CLON//CONTROL 0.2").color(SECONDARY).small());
-        ui.label(RichText::new("No oficial • Rust").color(SECONDARY).small());
+        ui.label(RichText::new("DPI  /  PROBADO").color(ACCENT).small().strong());
+        ui.label(RichText::new("Luces, botones y rueda").color(SECONDARY).small());
+        ui.label(RichText::new("todavía experimentales").color(SECONDARY).small());
+        ui.add_space(12.0);
+        ui.label(RichText::new("CLON//CONTROL").color(SECONDARY).small());
     }
 
     fn title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
@@ -270,118 +350,44 @@ impl Configurator {
         ui.add_space(17.0);
     }
 
-    fn mouse_drawing(ui: &mut egui::Ui) {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(205.0, 185.0), egui::Sense::hover());
-        let painter = ui.painter();
-        let center = rect.center();
-        let body = egui::Rect::from_center_size(center, Vec2::new(106.0, 174.0));
-        painter.rect_filled(body, 51.0, Color32::from_rgb(49, 58, 67));
-        let top = egui::Rect::from_center_size(
-            center + egui::vec2(0.0, -37.0), Vec2::new(93.0, 92.0),
-        );
-        painter.rect_filled(top, 43.0, PANEL);
-        painter.line_segment(
-            [center + egui::vec2(0.0, -85.0), center + egui::vec2(0.0, -10.0)],
-            Stroke::new(2.0, Color32::from_rgb(95, 109, 119)),
-        );
-        painter.rect_filled(
-            egui::Rect::from_center_size(center + egui::vec2(0.0, -43.0), Vec2::new(8.0, 24.0)),
-            4.0,
-            ACCENT,
-        );
-        painter.rect_filled(
-            egui::Rect::from_center_size(center + egui::vec2(-53.0, 0.0), Vec2::new(10.0, 26.0)),
-            4.0,
-            ACCENT,
-        );
-        painter.circle_filled(center + egui::vec2(0.0, 47.0), 5.0, ACCENT);
-    }
-
-    fn overview(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Tu mouse, tus reglas", "Todos los controles del mouse en un solo lugar.");
+    fn dpi(&mut self, ui: &mut egui::Ui) {
+        Self::title(ui, "DPI bajo control", "Cuatro perfiles. Un botón. Nada de rituales.");
+        let current = self.settings.active.min(3);
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                Self::mouse_drawing(ui);
+                ui.heading(RichText::new(format!("{} CPI", self.settings.profiles[current] as u16 * 200))
+                    .size(31.0).color(ACCENT));
                 ui.vertical(|ui| {
-                    ui.add_space(12.0);
-                    ui.heading("Mouse USB 18F8:1286");
-                    ui.label(RichText::new("INSTANT 18F8:1286 — canal Feature 07 identificado en el descriptor").color(SECONDARY));
-                    ui.add_space(12.0);
-                    let connected = self.devices.iter().any(|d| d.eligible);
-                    ui.colored_label(
-                        if connected { ACCENT } else { Color32::YELLOW },
-                        if connected { "Canal de configuración MI 1 / FF01:0001" } else { "Canal de configuración sin verificar" },
-                    );
-                    ui.label("No se ha leído el DPI real del mouse");
-                    ui.add_space(14.0);
-                    if ui.button("Ver diagnóstico USB  →").clicked() { self.page = Page::Diagnostics; }
+                    ui.strong("Perfil seleccionado");
+                    ui.label(RichText::new("Valor nominal; no medido con instrumentos").small().color(SECONDARY));
                 });
             });
         });
-        ui.add_space(18.0);
-        ui.heading("Accesos rapidos");
-        ui.columns(2, |cols| {
-            cols[0].group(|ui| {
-                ui.heading("Sensibilidad");
-                ui.label(format!("{} CPI (valor previsto)", self.settings.profiles.get(self.settings.active).copied().unwrap_or(3) as u16 * 200));
-                ui.label(RichText::new("4 perfiles configurables").color(SECONDARY));
-                if ui.button("Editar DPI  →").clicked() { self.page = Page::Dpi; }
-            });
-            cols[1].group(|ui| {
-                ui.heading("Iluminación");
-                ui.label(self.settings.light.label());
-                ui.label(RichText::new("Cambiar efectos sin Synapse").color(SECONDARY));
-                if ui.button("Editar luces  →").clicked() { self.page = Page::Lights; }
-            });
-        });
-        ui.add_space(13.0);
-        ui.group(|ui| {
-            ui.heading("Primera prueba recomendada");
-            ui.label("1. Abre Diagnóstico para confirmar el HID correcto.");
-            ui.label("2. En Iluminación selecciona Apagada.");
-            ui.label("3. Pulsa Simular y revisa el reporte.");
-            ui.label("4. Solo después autoriza una escritura real.");
-            if ui.button("Preparar prueba RGB apagado").clicked() {
-                self.settings.apply_dpi = false;
-                self.settings.apply_wheel = false;
-                self.settings.apply_buttons = false;
-                self.settings.apply_light = true;
-                self.settings.light = Light::Off;
-                self.reset_consent();
-                self.page = Page::Lights;
-                self.message("RGB apagado preparado. Simula antes de conectar realmente.", false);
-            }
-        });
-    }
-
-    fn dpi(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Sensibilidad (DPI)", "Elige hasta cuatro velocidades y decide cuál está activa.");
-        ui.label(RichText::new("200 a 3000 CPI nominales, en incrementos de 200.").color(SECONDARY));
         ui.add_space(12.0);
-        let active = self.settings.active.min(3);
-        ui.group(|ui| {
-            ui.heading(format!("DPI seleccionado: {} CPI", self.settings.profiles[active] as u16 * 200));
-            ui.label(RichText::new("Valor configurado en la aplicación, no medido en el mouse.").color(SECONDARY));
-            let changed = ui.add(egui::Slider::new(&mut self.settings.profiles[active], 1..=15)
-                .text("Ajustar sensibilidad principal (×200 CPI)")).changed();
-            if changed {
-                self.settings.enabled[active] = true;
-                self.settings.apply_dpi = true;
-                self.reset_consent();
-            }
-            ui.label("Para cambiar de perfil, marca «Usar» en uno de los cuatro perfiles inferiores.");
-        });
-        ui.add_space(12.0);
+        ui.label(RichText::new("Elige el perfil activo y su sensibilidad (200 a 3000 CPI).")
+            .color(SECONDARY));
+        ui.add_space(10.0);
         for i in 0..4 {
             let mut changed = false;
             ui.group(|ui| {
                 ui.horizontal(|ui| {
-                    ui.heading(format!("Perfil {}", i + 1));
-                    if ui.radio_value(&mut self.settings.active, i, "Usar").changed() { changed = true; }
-                    if ui.checkbox(&mut self.settings.enabled[i], "Habilitado").changed() { changed = true; }
-                    ui.colored_label(ACCENT, format!("{} CPI", self.settings.profiles[i] as u16 * 200));
+                    if ui.radio_value(&mut self.settings.active, i, format!("Perfil {}", i + 1)).changed() {
+                        self.settings.enabled[i] = true;
+                        changed = true;
+                    }
+                    ui.separator();
+                    if ui.checkbox(&mut self.settings.enabled[i], "Activo").changed() {
+                        if self.settings.active == i && !self.settings.enabled[i] {
+                            self.settings.enabled[i] = true; // active profile cannot be disabled
+                        } else {
+                            changed = true;
+                        }
+                    }
+                    ui.label(RichText::new(format!("{} CPI", self.settings.profiles[i] as u16 * 200))
+                        .color(if self.settings.active == i { ACCENT } else { SECONDARY }));
                 });
-                if ui.add(egui::Slider::new(&mut self.settings.profiles[i], 1..=15).text("Velocidad")).changed() {
+                if ui.add(egui::Slider::new(&mut self.settings.profiles[i], 1..=15)
+                    .text("Sensibilidad").suffix(" x200 CPI")).changed() {
                     changed = true;
                 }
             });
@@ -391,40 +397,69 @@ impl Configurator {
             }
             ui.add_space(6.0);
         }
-        ui.label(RichText::new("Se envían los cuatro perfiles cuando aplicas el DPI. El activo debe estar habilitado.").color(SECONDARY));
-        ui.checkbox(&mut self.settings.apply_dpi, "Incluir DPI en la siguiente aplicación");
+        ui.add_space(12.0);
+        let eligible = self.devices.get(self.selected).is_some_and(|d| d.eligible);
+        let response = ui.add_enabled(eligible,
+            egui::Button::new(RichText::new("      Aplicar DPI al mouse").size(17.0).strong())
+                .min_size(Vec2::new(274.0, 51.0)));
+        paint_glyph(ui.painter(), response.rect.left_center() + egui::vec2(20.0, 0.0),
+            Glyph::Apply, if eligible { ACCENT } else { SECONDARY });
+        if response.clicked() { self.apply_dpi(); }
+        ui.label(RichText::new(
+            "El botón envía solo los cuatro reportes DPI. No modifica luces, botones ni rueda."
+        ).color(SECONDARY).small());
+        if !eligible {
+            ui.colored_label(Color32::YELLOW, "No se detecta el canal HID. Usa Buscar mouse.");
+        }
+    }
+
+    fn experimental(&mut self, ui: &mut egui::Ui) {
+        Self::title(ui, "Otras funciones", "Disponibles para explorar, pero sin resultado físico confirmado.");
+        ui.colored_label(Color32::YELLOW,
+            "La iluminación ya fue probada sin efecto visible. Botones y rueda aún no se han validado.");
+        ui.label(RichText::new(
+            "Estos controles están separados del DPI. No se enviará ninguno al aplicar sensibilidad."
+        ).color(SECONDARY));
+        ui.add_space(12.0);
+        let rgb = ui.collapsing("       Iluminación · no comprobada", |ui| self.lighting(ui));
+        paint_glyph(ui.painter(), rgb.header_response.rect.left_center() + egui::vec2(24.0, 0.0), Glyph::Lamp, SECONDARY);
+        let buttons = ui.collapsing("       Botones laterales · no comprobados", |ui| self.buttons(ui));
+        paint_glyph(ui.painter(), buttons.header_response.rect.left_center() + egui::vec2(24.0, 0.0), Glyph::Buttons, SECONDARY);
+        let wheel = ui.collapsing("       Rueda · no comprobada", |ui| self.wheel(ui));
+        paint_glyph(ui.painter(), wheel.header_response.rect.left_center() + egui::vec2(24.0, 0.0), Glyph::Wheel, SECONDARY);
+        ui.add_space(16.0);
+        let has_changes = self.settings.apply_light || self.settings.apply_buttons || self.settings.apply_wheel;
+        if has_changes {
+            ui.colored_label(Color32::YELLOW,
+                "Estas operaciones pueden no producir cambios o alterar la asignación de botones.");
+            ui.checkbox(&mut self.armed, "Entiendo que estas funciones son experimentales");
+            if ui.add_enabled(self.armed && self.devices.get(self.selected).is_some_and(|d| d.eligible),
+                egui::Button::new("Aplicar funciones experimentales")
+            ).clicked() {
+                self.apply_experimental();
+            }
+        } else {
+            ui.label("Abre una sección y elige qué función quieres probar.");
+        }
     }
 
     fn lighting(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Iluminación", "Elige un efecto y pruébalo; el cambio no es automático."); 
-        if ui.button("Preparar prueba: apagar la luz (solo RGB)").clicked() {
-            self.settings.apply_light = true;
-            self.settings.light = Light::Off;
-            self.settings.apply_dpi = false;
-            self.settings.apply_wheel = false;
-            self.settings.apply_buttons = false;
-            self.reset_consent();
-            self.message("Iluminación apagada preparada. Pulsa «Simular» y revisa los comandos antes de autorizar una prueba real.", false);
-        }
-        ui.add_space(8.0);
-        ui.group(|ui| {
-            ui.label(RichText::new("EFECTO").color(SECONDARY));
-            ui.add_space(8.0);
-            for mode in Light::ALL {
-                if ui.radio_value(&mut self.settings.light, mode, mode.label()).changed() {
-                    self.settings.apply_light = true;
-                    self.reset_consent();
-                }
+        ui.label("Modo de iluminación");
+        for mode in Light::ALL {
+            if ui.radio_value(&mut self.settings.light, mode, mode.label()).changed() {
+                self.settings.apply_light = true;
+                self.reset_consent();
             }
-        });
-        ui.add_space(16.0);
-        ui.checkbox(&mut self.settings.apply_light, "Incluir iluminación en la siguiente aplicación");
-        ui.label(RichText::new("Solo modos predefinidos. No es compatible con RGB por zona ni colores personalizados.").color(SECONDARY));
-        ui.label(RichText::new("Si no cambia al aplicarlo, visita Diagnóstico: el envío de 8 bytes no está verificado en Windows.").color(SECONDARY));
+        }
+        if ui.checkbox(&mut self.settings.apply_light, "Preparar iluminación").changed() {
+            self.reset_consent();
+        }
+        ui.label(RichText::new("La orden de apagado fue aceptada por Windows, sin efecto visible.").color(SECONDARY).small());
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Asignaciones", "Dos botones laterales con funciones claras.");
+        ui.heading("Asignaciones laterales");
+        ui.label(RichText::new("Solo los dos botones laterales; sin alterar los clics principales.").color(SECONDARY));
         ui.group(|ui| {
             ui.heading("Boton delantero");
             ui.label(RichText::new("Identificador físico 05").color(SECONDARY));
@@ -455,12 +490,13 @@ impl Configurator {
                 });
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_buttons, "Incluir botones en la siguiente aplicación");
-        ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aqui.").color(SECONDARY));
+        if ui.checkbox(&mut self.settings.apply_buttons, "Preparar botones").changed() { self.reset_consent(); }
+        ui.label(RichText::new("Los laterales pueden venir invertidos en algunas copias. Los clics izquierdo y derecho nunca se reasignan aquí.").color(SECONDARY));
     }
 
     fn wheel(&mut self, ui: &mut egui::Ui) {
-        Self::title(ui, "Rueda", "Una sola decision, dos comportamientos.");
+        ui.heading("Rueda");
+        ui.label(RichText::new("Desplazamiento normal o volumen. Aún sin prueba física.").color(SECONDARY));
         ui.group(|ui| {
             for mode in Wheel::ALL {
                 if ui.radio_value(&mut self.settings.wheel, mode, mode.label()).changed() {
@@ -470,13 +506,13 @@ impl Configurator {
             }
         });
         ui.add_space(12.0);
-        ui.checkbox(&mut self.settings.apply_wheel, "Incluir rueda en la siguiente aplicación");
+        if ui.checkbox(&mut self.settings.apply_wheel, "Preparar rueda").changed() { self.reset_consent(); }
     }
 
     fn diagnostics(&mut self, ui: &mut egui::Ui) {
         Self::title(ui, "Diagnóstico USB", "Información observable; sin lecturas de firmware.");
         ui.horizontal(|ui| {
-            if ui.button("↻ Volver a buscar").clicked() { self.rescan(); }
+            if ui.button("Buscar de nuevo").clicked() { self.rescan(); }
             ui.label(RichText::new("VID 18F8  •  PID 1286").monospace().color(ACCENT));
         });
         ui.add_space(10.0);
@@ -510,7 +546,7 @@ impl Configurator {
         ui.label("MI 1 / FF01:0001 — Feature Report 07 — 7 bytes de datos + 1 byte de ID.");
         ui.label("El diagnóstico aportado confirmó que la colección #4 anuncia este reporte. La colección del mouse (MI 0) no lo anuncia.");
         ui.label(RichText::new("Se deshabilitó la trama experimental de 16 bytes: no coincide con el descriptor Windows observado.").color(SECONDARY));
-        ui.label(RichText::new("Un envío aceptado no demuestra que el firmware haya cambiado DPI o luz. Prueba solo apagar la luz antes de tocar DPI.").color(SECONDARY));
+        ui.label(RichText::new("El DPI produjo un cambio observable en este dispositivo; su valor CPI exacto no está medido. La luz sigue sin respuesta comprobada.").color(SECONDARY));
         ui.label("Ejecuta a704f-diag.exe para generar %LOCALAPPDATA%\\ClonControl\\diagnostico.txt sin escribir al USB.");
         ui.add_space(17.0);
         ui.heading("Vista previa de comandos");
@@ -540,37 +576,21 @@ impl Configurator {
             ui.label("Todavía no hay ninguna escritura real registrada en este equipo.");
         }
         ui.add_space(15.0);
-        ui.label(RichText::new("La compatibilidad física aún debe comprobarse. No se envían comandos sin consentimiento.").color(SECONDARY));
+        ui.label(RichText::new("El DPI ha sido observado funcionando en esta unidad. Los demás efectos no están confirmados.").color(SECONDARY));
     }
 
     fn action_bar(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(10.0);
+        ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("REPORTES PREPARADOS").color(SECONDARY).small());
-            ui.colored_label(ACCENT, format!("{} reportes", self.pending_count()));
-            ui.separator();
-            ui.checkbox(&mut self.dry_run, "Solo simular (no cambia nada)");
-            ui.checkbox(&mut self.armed, "Autorizo una prueba real");
-            if ui.button("Simular").clicked() {
-                self.dry_run = true;
-                self.apply();
-            }
-            if ui.add_enabled(!self.dry_run && self.armed && self.pending_count() > 0,
-                egui::Button::new(RichText::new("APLICAR AL MOUSE").strong().color(ACCENT))
-            ).clicked() {
-                self.apply();
-            }
-            if ui.button("Guardar preset").clicked() { self.save(); }
+            ui.label(RichText::new("Los cambios solo se envían al pulsar Aplicar.").color(SECONDARY).small());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if icon_button(ui, "Guardar perfiles", Glyph::Save, Vec2::new(160.0, 31.0), false).clicked() { self.save(); }
+            });
         });
-        ui.label(RichText::new(
-            "Para cambiar el DPI o las luces: configura, pulsa Simular, desactiva «Solo simular», autoriza y aplica. El permiso se revoca tras cada envío.",
-        ).color(SECONDARY).small());
-        ui.colored_label(
-            if self.error { Color32::LIGHT_RED } else { ACCENT },
-            &self.status,
-        );
-        ui.add_space(9.0);
+        ui.colored_label(if self.error { Color32::LIGHT_RED } else { ACCENT }, &self.status);
+        ui.add_space(7.0);
     }
+
 }
 
 impl eframe::App for Configurator {
@@ -586,11 +606,8 @@ impl eframe::App for Configurator {
                 .show(ui, |ui| {
                     ui.add_space(15.0);
                     match self.page {
-                        Page::Device => self.overview(ui),
                         Page::Dpi => self.dpi(ui),
-                        Page::Lights => self.lighting(ui),
-                        Page::Buttons => self.buttons(ui),
-                        Page::Wheel => self.wheel(ui),
+                        Page::Experimental => self.experimental(ui),
                         Page::Diagnostics => self.diagnostics(ui),
                     }
                     ui.add_space(16.0);

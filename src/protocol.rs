@@ -106,6 +106,23 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Send only the four DPI reports, independent of any persisted experimental toggles.
+    pub fn dpi_reports(&self) -> Result<Vec<Report>, String> {
+        let mut selection = self.clone();
+        selection.apply_dpi = true;
+        selection.apply_light = false;
+        selection.apply_buttons = false;
+        selection.apply_wheel = false;
+        selection.reports()
+    }
+
+    /// Never send a DPI report from the unverified feature panel.
+    pub fn experimental_reports(&self) -> Result<Vec<Report>, String> {
+        let mut selection = self.clone();
+        selection.apply_dpi = false;
+        selection.reports()
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.active > 3 { return Err("Perfil activo fuera del rango".into()); }
         if self.apply_dpi {
@@ -368,6 +385,36 @@ mod tests {
         assert_eq!(bind(5, Action::Forward).unwrap(), [7, 0x10, 5, 5, 0, 0, 0, 0]);
         assert!(bind(1, Action::Forward).is_err());
         assert_eq!(wheel(Wheel::Volume), [7, 0x11, 1, 0, 0, 0, 0, 0]);
+    }
+    #[test]
+    fn dpi_always_isolated_from_all_experimental_toggles() {
+        let mut s = Settings::default();
+        s.apply_dpi = false;
+        s.apply_light = true;
+        s.apply_wheel = true;
+        s.apply_buttons = true;
+        let reports = s.dpi_reports().unwrap();
+        assert_eq!(reports.len(), 4);
+        assert!(reports.iter().all(|r| r[0] == 7 && r[1] == 9));
+        assert_eq!(reports[0], [7, 9, 0, 0x38, 0x0F, 0, 0, 0]);
+    }
+    #[test]
+    fn experimental_never_sends_dpi() {
+        let mut s = Settings::default();
+        s.apply_dpi = true;
+        s.apply_light = true;
+        let reports = s.experimental_reports().unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0][1], 0x13);
+        s.apply_light = false;
+        assert!(s.experimental_reports().unwrap().is_empty());
+    }
+    #[test]
+    fn invalid_dpi_refused_even_in_simple_path() {
+        let mut s = Settings::default();
+        s.active = 2;
+        s.enabled[2] = false;
+        assert!(s.dpi_reports().is_err());
     }
     #[test]
     fn default_never_writes() {
