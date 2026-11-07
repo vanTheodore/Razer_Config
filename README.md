@@ -20,6 +20,26 @@
 
 Listo. Sin «Simular», sin autorización duplicada y sin escribir mientras mueves los deslizadores. **Guardar perfiles** solo guarda la configuración local. La operación «Aplicar DPI» envía únicamente los cuatro reportes DPI `07 09` y deja fuera RGB, botones y rueda.
 
+## Restaurar DPI automáticamente al iniciar sesión en Windows
+
+CLON//CONTROL ofrece el modo **`cloncontrol.exe --restore-dpi`**, de una sola ejecución y sin interfaz. Úsalo solamente si deseas autorizar la restauración automática de tus DPI tras iniciar sesión en Windows. **No graba perfiles en la memoria interna del mouse**, ni queda residente.
+
+1. En la interfaz, configura tus DPI, pulsa **Guardar perfiles** y **Aplicar DPI al mouse**. El modo silencioso lee únicamente `%LOCALAPPDATA%\\ClonControl\\a704f.json`.
+2. Coloca `cloncontrol.exe` (esta versión) junto a tu script de inicio de AutoHotkey v2 o configura una ruta absoluta conocida.
+3. En tu script AHK, añade `SetTimer(RestoreClonControlDpi, -10000)` a su sección de inicio y esta función en cualquier parte del archivo:
+
+```autohotkey
+RestoreClonControlDpi() {
+    exe := A_ScriptDir . "\\cloncontrol.exe"
+    if FileExist(exe)
+        try Run('"' exe '" --restore-dpi', , "Hide")
+}
+```
+
+El temporizador negativo se ejecuta **una vez** después de 10 segundos, dejando tiempo al USB para enumerarse. El ejecutable reintenta detectar brevemente el canal correcto; si hay varios canales compatibles, falta el preset o sus valores son inválidos, **no envía nada**. No solicita elevación ni modifica otros dispositivos. Quita la línea `SetTimer` para desactivar la restauración automática.
+
+Consulta el último resultado en `%LOCALAPPDATA%\\ClonControl\\ultima_restauracion_dpi.txt`: **Windows aceptó los reportes** no implica necesariamente que el DPI se haya modificado físicamente. Los cambios solo se restaurarán en futuros inicios si pulsaste **Guardar perfiles**; pulsar **Aplicar DPI** sin guardar no actualiza el preset.
+
 ## Estado real de las funciones
 
 | Función | Estado | Qué sabemos |
@@ -51,7 +71,7 @@ La pantalla **Otras funciones** separa las operaciones no verificadas del DPI y 
 - No requiere servicio residente, cuenta, nube ni instalación de un driver adicional.
 - Los perfiles locales están en `%LOCALAPPDATA%\ClonControl\a704f.json`.
 - El último resultado de escritura HID se registra en `%LOCALAPPDATA%\ClonControl\ultima_prueba_hid.txt`, sin rutas USB ni números de serie. El registro no constituye una medición física de DPI.
-- Toda escritura exige una acción expresa. El programa revalida la interfaz HID antes de transmitir.
+- Toda escritura exige pulsar **Aplicar** o ejecutar explícitamente `--restore-dpi` (por ejemplo desde un inicio de sesión configurado por el usuario). El programa revalida la interfaz HID antes de transmitir.
 
 **No es un programa universal** para todos los clones, ni para todos los firmwares Instant A704F. El VID/PID compartido por otros modelos no garantiza compatibilidad.
 
