@@ -36,6 +36,19 @@ jobs:
         run: cargo clippy --all-targets
       - name: Build release
         run: cargo build --release --bins
+      - name: Smoke test silent restore without a saved preset
+        shell: pwsh
+        run: |
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP "cloncontrol-empty-preset"
+          New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
+          $exe = (Resolve-Path target/release/cloncontrol.exe).Path
+          $restore = Start-Process -FilePath $exe -ArgumentList '--restore-dpi' -PassThru -Wait -WindowStyle Hidden
+          if ($restore.ExitCode -ne 1) { throw "Expected exit 1 without a saved preset; got $($restore.ExitCode)" }
+          $status = Join-Path $env:LOCALAPPDATA "ClonControl/ultima_restauracion_dpi.txt"
+          if (!(Test-Path $status)) { throw "Expected a diagnostic status file" }
+          if ((Get-Content -Raw $status) -notmatch 'ERROR') { throw "Expected a failed restore status" }
+          $badArg = Start-Process -FilePath $exe -ArgumentList '--unknown-option' -PassThru -Wait -WindowStyle Hidden
+          if ($badArg.ExitCode -ne 2) { throw "Unexpected exit for an unknown CLI argument: $($badArg.ExitCode)" }
       - name: Package portable binaries and hashes
         shell: pwsh
         run: |

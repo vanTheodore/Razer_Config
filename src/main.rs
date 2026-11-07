@@ -12,6 +12,17 @@ fn app_icon() -> eframe::egui::IconData {
 
 #[cfg(windows)]
 fn main() -> eframe::Result<()> {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if !args.is_empty() {
+        if args.len() == 1 && args[0] == std::ffi::OsStr::new("--restore-dpi") {
+            match cloncontrol_a704f::restore::restore_saved_dpi() {
+                Ok(_) => return Ok(()),
+                Err(_) => std::process::exit(1),
+            }
+        }
+        std::process::exit(2);
+    }
+
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([900.0, 740.0])

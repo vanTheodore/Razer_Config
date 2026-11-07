@@ -2,6 +2,14 @@
 
 Este archivo resume los cambios importantes **sin reescribir el historial Git publicado**. Los SHA y PR originales siguen siendo consultables.
 
+## Próxima versión — restauración DPI al inicio (PR pendiente)
+
+- Modo explícito `--restore-dpi`: carga el preset local, valida cuatro perfiles y aplica únicamente los cuatro reportes DPI `07 09`.
+- Rebusca brevemente el canal HID validado en el arranque; no reutiliza rutas USB guardadas ni elige de forma arbitraria cuando hay varios candidatos.
+- Escribe un estado separado de restauración (`ultima_restauracion_dpi.txt`) sin rutas USB ni seriales, y mantiene la distinción entre aceptación HID y efecto físico observado.
+- Ejemplo optativo para AutoHotkey v2: un temporizador de 10 segundos sin servicio residente.
+- Pruebas de carga estricta y aislamiento de funciones experimentales. Pendiente: compilación CI Windows y confirmación física del propietario tras reiniciar.
+
 ## v0.3.0 — «El clon responde» (interfaz DPI primero)
 
 - **DPI primero:** cuatro perfiles directamente accesibles y un único botón de aplicación, sin ritual de simulaciones.
